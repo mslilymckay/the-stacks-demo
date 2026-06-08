@@ -230,9 +230,8 @@ body {
 /* Main Bookshelf Area */
 .bookshelf {
   flex-grow: 1;
-  padding: 10px 0 0 0; /* Reduced top padding from 20px to 10px */
-  overflow-y: auto;
-  overflow-x: hidden;
+  padding: 10px 0 0 0;
+  overflow: hidden;
   width: 100%;
 }
 
@@ -691,8 +690,13 @@ body {
 
 /* --- PAGE VIEW ARCHITECTURE --- */
 .page-view {
-  display: none; /* Hide everything by default */
+  display: none; 
+  height: 100%; /* Forces the view to fill the screen */
+  overflow-y: auto; /* Makes each view its own scroll container */
+  -webkit-overflow-scrolling: touch; /* CRITICAL for smooth iOS scrolling */
+  padding-bottom: 80px; /* Accounts for your bottom nav bar */
   animation: fadeIn 0.25s ease-out forwards;
+}
 }
 
 /* Only show the section with the 'active' class */
@@ -1373,10 +1377,12 @@ body {
 
 /* Base Grid Transition */
 .book-grid {
-  transition: opacity 0.2s ease;
+  display: grid;
+  grid-template-columns: calc(50% - 10px) calc(50% - 10px);
+  gap: 20px;
   width: 100%;
-  box-sizing: border-box !important;
-  margin: 0 !important;
+  background-color: var(--bg-color); 
+  padding: 20px 15px 30px 15px; /* Removed the 110px bottom padding */
 }
 
 /* 1. Default Grid (3-Column Cover Only) */
@@ -1547,7 +1553,6 @@ body {
 /* --- PHASE 3: READING JOURNAL VIEWS --- */
 #view-details {
   background-color: var(--bg-color);
-  overflow-y: auto;
   padding-bottom: 80px; /* Space for the bottom nav */
 }
 
