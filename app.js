@@ -1592,10 +1592,10 @@ navItems.forEach(item => {
     const currentActive = document.querySelector('.page-view.active');
     if (currentActive && currentActive.id !== 'view-focus') {
       scrollCache[currentActive.id] = currentActive.scrollTop;
-      previousViewId = currentActive.id;
+      let previousViewId = currentActive.id;
     }
 
-    lastActiveTab = targetId;
+    let lastActiveTab = targetId;
     window.history.replaceState({ level: 'main' }, '');
         
     navItems.forEach(btn => btn.classList.remove('active'));
