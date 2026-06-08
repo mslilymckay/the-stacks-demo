@@ -229,6 +229,8 @@ body {
 
 /* Main Bookshelf Area */
 .bookshelf {
+  display: flex;
+  flex-direction: column;
   flex-grow: 1;
   padding: 10px 0 0 0;
   overflow: hidden;
@@ -691,7 +693,8 @@ body {
 /* --- PAGE VIEW ARCHITECTURE --- */
 .page-view {
   display: none; 
-  height: 100%; /* Forces the view to fill the screen */
+  flex-grow: 1;
+  width: 100%;
   overflow-y: auto; /* Makes each view its own scroll container */
   -webkit-overflow-scrolling: touch; /* CRITICAL for smooth iOS scrolling */
   padding-bottom: 80px; /* Accounts for your bottom nav bar */
