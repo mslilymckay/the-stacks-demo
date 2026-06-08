@@ -967,10 +967,10 @@ function openDetails(book, clickedElement) {
   const detailsContainer = document.getElementById('view-details');
     if (detailsContainer) {
       detailsContainer.classList.add('active');
-    }
 
-    // Add this line right here! 
-    // IDK  window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Add this to force the reading journal to start at the top
+      detailsContainer.scrollTop = 0;
+    }
 
   // ==========================================
   // CLOSE BOOK DETAILS LOGIC
@@ -1511,7 +1511,6 @@ if (headerScrollTrigger) {
   headerScrollTrigger.addEventListener('click', () => {
     const activeView = document.querySelector('.page-view.active');
     if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
-    if (bookshelfContainer) bookshelfContainer.scrollTo({ top: 0, behavior: 'smooth' });
   });
 }
 
@@ -1582,39 +1581,54 @@ if (feedbackModal && feedbackTriggerBtn) {
   }
 }
 
+// 1. Create a global cache to remember scroll positions
+const scrollCache = {};
+
 navItems.forEach(item => {
   item.addEventListener('click', () => {
     const targetId = item.getAttribute('data-target');
 
-    lastActiveTab = targetId;
-    window.history.replaceState({ level: 'main' }, '');
-        
+    // 2. Save the scroll position of the current tab BEFORE switching
     const currentActive = document.querySelector('.page-view.active');
-    if (currentActive && currentActive.id !== 'view-focus' && targetId === 'view-focus') {
+    if (currentActive && currentActive.id !== 'view-focus') {
+      scrollCache[currentActive.id] = currentActive.scrollTop;
       previousViewId = currentActive.id;
     }
 
+    lastActiveTab = targetId;
+    window.history.replaceState({ level: 'main' }, '');
+        
     navItems.forEach(btn => btn.classList.remove('active'));
     item.classList.add('active');
 
     pageViews.forEach(view => view.classList.remove('active'));
     const targetView = document.getElementById(targetId);
-    if(targetView) targetView.classList.add('active');
-
-    if (bookshelfContainer) bookshelfContainer.scrollTo({ top: 0, behavior: 'instant' });
+    
+    if(targetView) {
+      targetView.classList.add('active');
+      
+      // 3. Restore the scroll position for the incoming tab!
+      targetView.scrollTop = scrollCache[targetId] || 0;
+    }
+    
     if (topFab) topFab.classList.remove('visible');
     if (sheet && sheet.classList.contains('open')) sheet.classList.remove('open');
   });
 });
 
-if (topFab && bookshelfContainer) {
-  bookshelfContainer.addEventListener('scroll', () => {
-    if (bookshelfContainer.scrollTop > 300) topFab.classList.add('visible');
-    else topFab.classList.remove('visible');
+if (topFab) {
+  // Listen to the individual views instead of the bookshelf
+  pageViews.forEach(view => {
+    view.addEventListener('scroll', () => {
+      if (view.scrollTop > 300) topFab.classList.add('visible');
+      else topFab.classList.remove('visible');
+    });
   });
 
   topFab.addEventListener('click', () => {
-    bookshelfContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    // Scroll the currently active view
+    const activeView = document.querySelector('.page-view.active');
+    if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
   });
 }
 
@@ -1670,7 +1684,8 @@ if (wanderTriggerBtn && wanderSheet) {
       // Instantly apply the filter and elegantly close the drawer
       applyLibraryFilters(); 
       wanderSheet.classList.remove('open');
-      if (typeof bookshelfContainer !== 'undefined' && bookshelfContainer) bookshelfContainer.scrollTo({ top: 0, behavior: 'smooth' });
+      const activeView = document.querySelector('.page-view.active');
+      if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
   
@@ -1679,7 +1694,8 @@ if (wanderTriggerBtn && wanderSheet) {
     applyWanderBtn.addEventListener('click', () => {
       applyLibraryFilters(); 
       wanderSheet.classList.remove('open');
-      if (typeof bookshelfContainer !== 'undefined' && bookshelfContainer) bookshelfContainer.scrollTo({ top: 0, behavior: 'smooth' });
+      const activeView = document.querySelector('.page-view.active');
+      if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
   
@@ -1700,7 +1716,8 @@ if (wanderTriggerBtn && wanderSheet) {
   
       applyLibraryFilters();
       wanderSheet.classList.remove('open');
-      if (typeof bookshelfContainer !== 'undefined' && bookshelfContainer) bookshelfContainer.scrollTo({ top: 0, behavior: 'smooth' });
+      const activeView = document.querySelector('.page-view.active');
+      if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
 }
