@@ -700,7 +700,6 @@ body {
   padding-bottom: 80px; /* Accounts for your bottom nav bar */
   animation: fadeIn 0.25s ease-out forwards;
 }
-}
 
 /* Only show the section with the 'active' class */
 .page-view.active {
