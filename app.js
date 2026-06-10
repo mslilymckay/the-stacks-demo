@@ -834,12 +834,12 @@ function openDetails(book, clickedElement) {
     const viewEl = document.getElementById(viewId);
     if (viewEl && viewEl.classList.contains('active')) {
       returnViewId = viewId;
+      // SAVE the scroll position RIGHT NOW before switching views
+      scrollCache[viewId] = viewEl.scrollTop;
     }
   });
 
   window.history.pushState({ level: 'overlay' }, '');
-  
-  // THE FIX: Use uuid, not id!
   currentOpenBookId = book.uuid; 
   
   const title = getField(book, 'title') || 'Unknown Title';
@@ -965,37 +965,56 @@ function openDetails(book, clickedElement) {
       </div>
     </div>
   `;
+
+  // Show/hide back button on scroll
+  const detailsContainer = document.getElementById('view-details');
+  const detailsHeader = document.querySelector('.details-header');
   
+  if (detailsContainer && detailsHeader) {
+    detailsContainer.addEventListener('scroll', () => {
+      if (detailsContainer.scrollTop > 50) {
+        detailsHeader.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+        detailsHeader.style.borderBottom = '1px solid rgba(0,0,0,0.1)';
+      } else {
+        detailsHeader.style.boxShadow = 'none';
+        detailsHeader.style.borderBottom = 'none';
+      }
+    });
+  }
+  
+  // When showing details view, hide others WITHOUT clearing their scroll
   pageViews.forEach(view => view.classList.remove('active'));
   const detailsContainer = document.getElementById('view-details');
-    if (detailsContainer) {
-      detailsContainer.classList.add('active');
-
-      // Add this to force the reading journal to start at the top
-      detailsContainer.scrollTop = 0;
-    }
+  if (detailsContainer) {
+    detailsContainer.classList.add('active');
+    detailsContainer.scrollTop = 0; // Only reset details view
+  }
 
   // ==========================================
   // CLOSE BOOK DETAILS LOGIC
   // ==========================================
   function closeBookDetails() {
-    const detailsContainer = document.getElementById('view-details'); 
-  
-    if (detailsContainer) {
-      detailsContainer.classList.remove('active'); 
-    }
-    
-    // Safely route back to whatever view Sarah was previously on!
-    const previousView = document.getElementById(lastActiveTab);
-    if (previousView) {
-      previousView.classList.add('active'); 
-    } else {
-      // Fallback just in case something goes wrong
-      document.getElementById('view-library').classList.add('active'); 
-    }
-  
-    currentOpenBookId = null; 
+  const detailsContainer = document.getElementById('view-details'); 
+
+  if (detailsContainer) {
+    detailsContainer.classList.remove('active'); 
   }
+  
+  // Restore the view with its saved scroll position
+  pageViews.forEach(view => view.classList.remove('active'));
+  const previousView = document.getElementById(lastActiveTab);
+  if (previousView) {
+    previousView.classList.add('active');
+    // Restore scroll on next frame
+    requestAnimationFrame(() => {
+      previousView.scrollTop = scrollCache[lastActiveTab] || 0;
+    });
+  } else {
+    document.getElementById('view-library').classList.add('active');
+  }
+
+  currentOpenBookId = null; 
+}
 
   // ==========================================
   // 4. ATTACH INTERACTIVE EVENT LISTENERS
@@ -1584,34 +1603,47 @@ if (feedbackModal && feedbackTriggerBtn) {
   }
 }
 
-// 1. Create a global cache to remember scroll positions
-const scrollCache = {};
+// REPLACE the entire scroll position caching section (around line 1050+) with this:
+
+// ==========================================
+// 7. NAVIGATION & SYSTEM (FIXED SCROLL HANDLING)
+// ==========================================
+
+const navItems = document.querySelectorAll('.nav-item');
+const pageViews = document.querySelectorAll('.page-view');
+let previousViewId = 'view-library';
+const scrollCache = {}; // Declare at module level
 
 navItems.forEach(item => {
   item.addEventListener('click', () => {
     const targetId = item.getAttribute('data-target');
 
-    // 2. Save the scroll position of the current tab BEFORE switching
+    // 1. SAVE scroll before switching away
     const currentActive = document.querySelector('.page-view.active');
     if (currentActive && currentActive.id !== 'view-focus') {
       scrollCache[currentActive.id] = currentActive.scrollTop;
       previousViewId = currentActive.id;
     }
 
+    // 2. Update nav state
     lastActiveTab = targetId;
     window.history.replaceState({ level: 'main' }, '');
-        
+    
     navItems.forEach(btn => btn.classList.remove('active'));
     item.classList.add('active');
 
+    // 3. Switch view visibility
     pageViews.forEach(view => view.classList.remove('active'));
     const targetView = document.getElementById(targetId);
     
-    if(targetView) {
+    if (targetView) {
       targetView.classList.add('active');
       
-      // 3. Restore the scroll position for the incoming tab!
-      targetView.scrollTop = scrollCache[targetId] || 0;
+      // 4. RESTORE scroll AFTER view is visible (use requestAnimationFrame to ensure DOM is ready)
+      requestAnimationFrame(() => {
+        const savedScroll = scrollCache[targetId] || 0;
+        targetView.scrollTop = savedScroll;
+      });
     }
     
     if (topFab) topFab.classList.remove('visible');
