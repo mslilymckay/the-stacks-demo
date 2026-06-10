@@ -1649,9 +1649,11 @@ navItems.forEach(item => {
         const savedScroll = scrollCache[targetId] || 0;
         targetView.scrollTop = savedScroll;
       });
+
+      // Tried adding here
+      if (topFab.classlist.contains('visible')) topFab.classList.remove('visible');
     }
     
-    if (topFab.classlist.contains('visible')) topFab.classList.remove('visible');
     if (sheet && sheet.classList.contains('open')) sheet.classList.remove('open');
   });
 });
