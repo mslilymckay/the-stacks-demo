@@ -1640,7 +1640,7 @@ navItems.forEach(item => {
     // 3. Switch view visibility
     pageViews.forEach(view => view.classList.remove('active'));
     const targetView = document.getElementById(targetId);
-    const topFab = document.getElementById('top-fab'); // Tried adding this
+    const topFab = document.getElementById('top-fab');
     
     if (targetView) {
       targetView.classList.add('active');
@@ -1650,10 +1650,8 @@ navItems.forEach(item => {
         const savedScroll = scrollCache[targetId] || 0;
         targetView.scrollTop = savedScroll;
       });
-
-      if (topFab.classlist.contains('visible')) topFab.classList.remove('visible');
     }
-    
+
     if (sheet && sheet.classList.contains('open')) sheet.classList.remove('open');
   });
 });
