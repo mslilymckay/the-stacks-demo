@@ -1639,7 +1639,7 @@ navItems.forEach(item => {
       });
     }
     
-    if (topFab) topFab.classList.remove('visible');
+    if (topFab.classlist.contains('visible')) topFab.classList.remove('visible');
     if (sheet && sheet.classList.contains('open')) sheet.classList.remove('open');
   });
 });
