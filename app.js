@@ -1640,6 +1640,7 @@ navItems.forEach(item => {
     // 3. Switch view visibility
     pageViews.forEach(view => view.classList.remove('active'));
     const targetView = document.getElementById(targetId);
+    const topFab = document.getElementById(top-fab); // Tried adding this
     
     if (targetView) {
       targetView.classList.add('active');
@@ -1650,7 +1651,6 @@ navItems.forEach(item => {
         targetView.scrollTop = savedScroll;
       });
 
-      // Tried adding here
       if (topFab.classlist.contains('visible')) topFab.classList.remove('visible');
     }
     
