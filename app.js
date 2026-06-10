@@ -984,7 +984,6 @@ function openDetails(book, clickedElement) {
   
   // When showing details view, hide others WITHOUT clearing their scroll
   pageViews.forEach(view => view.classList.remove('active'));
-  const detailsContainer = document.getElementById('view-details');
   if (detailsContainer) {
     detailsContainer.classList.add('active');
     detailsContainer.scrollTop = 0; // Only reset details view
@@ -1518,14 +1517,8 @@ if (focusCloseBtn) {
 
 
 // ==========================================
-// 7. NAVIGATION & SYSTEM
+// BATCH 8: HEADER & FEEDBACK LOGIC
 // ==========================================
-
-const navItems = document.querySelectorAll('.nav-item');
-const pageViews = document.querySelectorAll('.page-view');
-let previousViewId = 'view-library'; 
-
-// --- BATCH 8: HEADER & FEEDBACK LOGIC ---
 
 // 1. Header Scroll-to-Top
 const headerScrollTrigger = document.getElementById('header-scroll-trigger');
