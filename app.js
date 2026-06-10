@@ -1640,7 +1640,7 @@ navItems.forEach(item => {
     // 3. Switch view visibility
     pageViews.forEach(view => view.classList.remove('active'));
     const targetView = document.getElementById(targetId);
-    const topFab = document.getElementById(top-fab); // Tried adding this
+    const topFab = document.getElementById('top-fab'); // Tried adding this
     
     if (targetView) {
       targetView.classList.add('active');
