@@ -853,8 +853,19 @@ body {
   grid-column: span 2;
 }
 
+#stats-book-list {
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  /* Remove any max-height or height constraints */
+}
+
 #stats-book-list.book-grid {
-  padding: 0 !important; 
+  padding: 0 !important;
+  grid-template-columns: unset; /* Override grid layout */
+  display: flex;
+  flex-direction: column;
 }
 
 .stat-card h3 {
