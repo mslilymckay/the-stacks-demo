@@ -837,6 +837,18 @@ function openDetails(book, clickedElement) {
       // SAVE the scroll position RIGHT NOW before switching views
       scrollCache[viewId] = viewEl.scrollTop;
     }
+
+    // FAB logic here
+    if (topFab) {
+      // Listen to the individual views instead of the bookshelf
+      pageViews.forEach(view => {
+        view.addEventListener('scroll', () => {
+          if (view.scrollTop > 300) topFab.classList.add('visible');
+          else topFab.classList.remove('visible');
+        });
+      });
+    }
+    
   });
 
   window.history.pushState({ level: 'overlay' }, '');
