@@ -86,10 +86,13 @@ wanderSelects.forEach(select => {
     // CLEAR the year filter anytime Sarah manually changes views!
     libraryYearFilter = 'all';
     // If Sarah manually changes a dropdown, strip the 'active' green color from all quick buttons
-    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-    btn.classList.add('active');
+    document.querySelectorAll('.quick-btn, .filter-btn').forEach(btn => btn.classList.remove('active'));
+    
     applyLibraryFilters();
-    if (wanderSheet) wanderSheet.classList.remove('open');
+    
+    // Safely target the sheet without crashing
+    const sheetEl = document.getElementById('wander-sheet');
+    if (sheetEl) sheetEl.classList.remove('open');
   });
 });
 
@@ -1592,10 +1595,10 @@ navItems.forEach(item => {
     const currentActive = document.querySelector('.page-view.active');
     if (currentActive && currentActive.id !== 'view-focus') {
       scrollCache[currentActive.id] = currentActive.scrollTop;
-      let previousViewId = currentActive.id;
+      previousViewId = currentActive.id;
     }
 
-    let lastActiveTab = targetId;
+    lastActiveTab = targetId;
     window.history.replaceState({ level: 'main' }, '');
         
     navItems.forEach(btn => btn.classList.remove('active'));
