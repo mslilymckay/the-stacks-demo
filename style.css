@@ -1647,10 +1647,29 @@ body {
   font-weight: bold;
   text-align: right;
   outline: none;
-  cursor: pointer;
+  cursor: default;
+  pointer-events: none;
   padding: 0;
   width: auto;
   direction: ltr; 
+}
+
+.pencil-trigger {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+  pointer-events: auto;
+}
+
+.pencil-trigger:hover {
+  transform: scale(1.15);
+}
+
+.pencil-trigger:hover svg {
+  color: var(--terracotta) !important;
+  opacity: 1 !important;
 }
 
 /* 1. Force iOS/Safari/Chrome text to align right inside the Shadow DOM */

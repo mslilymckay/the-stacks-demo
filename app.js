@@ -77,11 +77,22 @@ const sheet = document.querySelector('.bottom-sheet:not(#wander-sheet)');
 const sheetHandle = document.querySelector('.sheet-handle');
 const topFab = document.getElementById('top-fab'); 
 const bookshelfContainer = document.querySelector('.bookshelf');
+
+// Helper to update Back to Top FAB visibility based on the active view's scroll position
+function updateFabVisibility() {
+  if (!topFab) return;
+  const activeView = document.querySelector('.page-view.active');
+  if (activeView && activeView.id !== 'view-focus' && activeView.id !== 'view-details' && activeView.scrollTop > 300) {
+    topFab.classList.add('visible');
+  } else {
+    topFab.classList.remove('visible');
+  }
+}
 const searchResultsContainer = document.getElementById('search-results-container');
 
 // Sync manual dropdowns with pre-built Quick Filters
 const wanderSelects = document.querySelectorAll('#wander-sheet select');
-wanderSelects.forEach(select => {
+ wanderSelects.forEach(select => {
   select.addEventListener('change', () => {
     // CLEAR the year filter anytime Sarah manually changes views!
     libraryYearFilter = 'all';
@@ -767,7 +778,7 @@ function renderGrid(booksToRender) {
     const author = getField(book, 'author') || 'Unknown Author';
     const ratingNum = Number(getField(book, 'rating')) || 0;
     
-    // Generate the stars: Gold for active, Grey for inactive
+    // Generator the stars: Gold for active, Grey for inactive
     let ratingDisplay = '<span style="color: #b3bfae; font-size: 11px; font-family: \'Courier New\';">No Rating</span>';
     if (ratingNum > 0) {
       ratingDisplay = '★'.repeat(ratingNum) + '<span style="color: #e0dcd3;">' + '★'.repeat(5 - ratingNum) + '</span>';
@@ -837,18 +848,6 @@ function openDetails(book, clickedElement) {
       // SAVE the scroll position RIGHT NOW before switching views
       scrollCache[viewId] = viewEl.scrollTop;
     }
-
-    // FAB logic here
-    if (topFab) {
-      // Listen to the individual views instead of the bookshelf
-      pageViews.forEach(view => {
-        view.addEventListener('scroll', () => {
-          if (view.scrollTop > 300) topFab.classList.add('visible');
-          else topFab.classList.remove('visible');
-        });
-      });
-    }
-    
   });
 
   window.history.pushState({ level: 'overlay' }, '');
@@ -929,7 +928,7 @@ function openDetails(book, clickedElement) {
               <option value="2" ${statusNum === '2' ? 'selected' : ''}>Finished</option>
               <option value="3" ${statusNum === '3' ? 'selected' : ''}>Gave Up</option>
             </select>
-            ${pencilSvg}
+            <span class="pencil-trigger" data-target="inline-status">${pencilSvg}</span>
           </div>
         </div>
         <div class="meta-row">
@@ -942,14 +941,14 @@ function openDetails(book, clickedElement) {
           <span class="meta-label">Started:</span> 
           <div class="input-with-icon">
             <input type="date" id="inline-started" class="inline-edit-input" value="${startedVal}">
-            ${pencilSvg}
+            <span class="pencil-trigger" data-target="inline-started">${pencilSvg}</span>
           </div>
         </div>
         <div class="meta-row">
           <span class="meta-label">Finished:</span> 
           <div class="input-with-icon">
             <input type="date" id="inline-finished" class="inline-edit-input" value="${finishedVal}">
-            ${pencilSvg}
+            <span class="pencil-trigger" data-target="inline-finished">${pencilSvg}</span>
           </div>
         </div>
       </div>
@@ -999,6 +998,7 @@ function openDetails(book, clickedElement) {
   if (detailsContainer) {
     detailsContainer.classList.add('active');
     detailsContainer.scrollTop = 0; // Only reset details view
+    updateFabVisibility();
   }
 
   // ==========================================
@@ -1019,6 +1019,7 @@ function openDetails(book, clickedElement) {
     // Restore scroll on next frame
     requestAnimationFrame(() => {
       previousView.scrollTop = scrollCache[lastActiveTab] || 0;
+      updateFabVisibility();
     });
   } else {
     document.getElementById('view-library').classList.add('active');
@@ -1032,6 +1033,25 @@ function openDetails(book, clickedElement) {
   // ==========================================
   
   // A. Inline Edits (Status & Dates)
+  // Pencil Triggers to open native pickers
+  document.querySelectorAll('.pencil-trigger').forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const targetId = trigger.getAttribute('data-target');
+      const targetInput = document.getElementById(targetId);
+      if (targetInput) {
+        try {
+          targetInput.showPicker();
+        } catch (err) {
+          console.error('showPicker failed, falling back to focus/click:', err);
+          targetInput.focus();
+          targetInput.click();
+        }
+      }
+    });
+  });
+
   document.getElementById('inline-status').addEventListener('change', async (e) => {
     const newStatus = parseInt(e.target.value);
     const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
@@ -1168,10 +1188,10 @@ function openDetails(book, clickedElement) {
   });
 
   // D. Action Buttons
-  document.getElementById('btn-refresh-book').addEventListener('click', async (e) => 
-    {
+  document.getElementById('btn-refresh-book').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.style.opacity = '0.5';
+    btn.style.pointerEvents = 'none';
     
     const isbn = getField(book, 'isbn');
     const qTitle = getField(book, 'title') || '';
@@ -1179,15 +1199,30 @@ function openDetails(book, clickedElement) {
     let query = '';
     
     const cleanIsbn = String(isbn).replace(/[-\s]/g, '');
-    if (cleanIsbn && cleanIsbn !== 'N/A' && cleanIsbn !== 'undefined') {
+    const isValidIsbn = /^\d{10}(\d{3})?$/.test(cleanIsbn);
+    
+    if (isValidIsbn) {
       query = `isbn:${cleanIsbn}`;
     } else {
-      query = `intitle:${qTitle.replace(/ /g, '+')}+inauthor:${qAuthor.replace(/ /g, '+')}`;
+      let parts = [];
+      if (qTitle.trim()) {
+        parts.push(`intitle:${qTitle.trim()}`);
+      }
+      if (qAuthor.trim()) {
+        parts.push(`inauthor:${qAuthor.trim()}`);
+      }
+      query = parts.join(' ');
+    }
+
+    if (!query) {
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+      return;
     }
 
     try {
       const apiKey = 'AIzaSyD8cH6KE9JXatD9t0tyc6QETNMrtJP-Pt4';
-      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${query}&key=${apiKey}`);
+      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&key=${apiKey}`);
       const data = await response.json();
 
       if (data.items && data.items.length > 0) {
@@ -1199,11 +1234,18 @@ function openDetails(book, clickedElement) {
         const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
         openDetails(updatedBook);
         applyLibraryFilters();
+      } else {
+        if (typeof showStacksModal === 'function') {
+          showStacksModal('Not Found', 'Could not find matching book details on Google Books.');
+        } else {
+          alert('Could not find matching book details on Google Books.');
+        }
       }
     } catch (error) {
       console.error(error);
     } finally {
       btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
     }
   });
 
@@ -1649,6 +1691,7 @@ navItems.forEach(item => {
       requestAnimationFrame(() => {
         const savedScroll = scrollCache[targetId] || 0;
         targetView.scrollTop = savedScroll;
+        updateFabVisibility();
       });
     }
 
@@ -1660,8 +1703,7 @@ if (topFab) {
   // Listen to the individual views instead of the bookshelf
   pageViews.forEach(view => {
     view.addEventListener('scroll', () => {
-      if (view.scrollTop > 300) topFab.classList.add('visible');
-      else topFab.classList.remove('visible');
+      updateFabVisibility();
     });
   });
 
