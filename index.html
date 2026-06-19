@@ -23,6 +23,7 @@
     <video autoplay muted playsinline id="loading-video">
       <source src="loading.mp4#t=3.5,7" type="video/mp4">
     </video>
+    <button id="skip-loading-btn" class="skip-btn">➔</button>
   </div>
 
   <div id="auth-screen" class="auth-screen hidden">
@@ -132,7 +133,7 @@
 
     <section id="view-details" class="page-view">
       <div class="details-header" style="display: flex; align-items: center; padding: 15px; position: sticky; top: 0; background: var(--bg-color); z-index: 10;">
-        <button id="close-details-btn" class="icon-action-btn" style="background: transparent; border: none; padding: 0; display: flex; align-items: center; gap: 5px; color: var(--terracotta); font-family: 'Courier New', Courier, monospace; font-weight: bold; cursor: pointer;">
+        <button id="close-details-btn" style="background: transparent; border: none; padding: 0; display: flex; align-items: center; gap: 5px; color: var(--terracotta); font-family: 'Courier New', Courier, monospace; font-weight: bold; cursor: pointer; transition: opacity 0.2s; -webkit-tap-highlight-color: transparent;">
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><polyline points="12 19 5 12 12 5"></polyline></svg>
           Back
         </button>
@@ -246,7 +247,6 @@
   <div id="wander-sheet" class="bottom-sheet" style="height: max-content; padding-bottom: max(env(safe-area-inset-bottom), 30px);">
     <div class="sheet-handle"></div>
     <div class="card-detail-container">
-      <div class="card-header-line"></div>
       <div class="punch-hole"></div>
       
       <h3 style="font-family: 'Courier New', Courier, monospace; color: var(--terracotta); margin: 10px 0 20px 0; text-align: center;">
@@ -264,29 +264,16 @@
       
       <div class="toolbar-input-wrapper" style="margin-bottom: 15px; position: relative;">
         <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" id="local-search" class="toolbar-input with-icon" style="border: 1px solid var(--detail-line); padding-right: 35px;" placeholder="Search title or author...">
+        <input type="text" id="local-search" class="toolbar-input with-icon" style="border: 1px solid var(--detail-line); padding-right: 65px;" placeholder="Search title or author...">
         
-        <button id="clear-search-btn" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--sage-green); padding: 0; cursor: pointer; display: none;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>
-      </div>
-
-      <div style="display: flex; gap: 10px; margin-top: 25px;">
-        <button id="apply-wander-btn" style="flex: 2; background-color: var(--terracotta); color: var(--header-text); display: flex; align-items: center; justify-content: center; gap: 8px; border: none; padding: 12px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="4" y="9" width="16" height="4" rx="1" transform="rotate(-12 12 11)" />
-            <rect x="4" y="14" width="16" height="4" rx="1" />
-            <rect x="4" y="4" width="16" height="4" rx="1" transform="rotate(8 12 6)" />
-          </svg>
-          Wander
-        </button>
-      </div>
-
-       <div style="display: flex; gap: 10px; margin-top: 25px;"> 
-        <button id="clear-wander-btn" style="flex: 1; background-color: transparent; color: var(--terracotta); border: 1px solid var(--terracotta); display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; font-size: 15px; font-weight: bold; cursor: pointer;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
-          Clear
-        </button>
+        <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px;">
+          <button id="clear-search-btn" style="background: none; border: none; color: var(--sage-green); padding: 0; cursor: pointer; display: none; align-items: center; justify-content: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+          <button id="submit-search-btn" style="background: none; border: none; color: var(--terracotta); padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </button>
+        </div>
       </div>
 
     </div>

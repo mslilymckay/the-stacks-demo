@@ -43,6 +43,38 @@
   transition: opacity 1s ease-in-out;
 }
 
+/* Cinematic Skip Loading Screen Button - Circular Arrow */
+.skip-btn {
+  position: absolute;
+  bottom: 40px;
+  right: 40px;
+  z-index: 10000;
+  background: rgba(253, 251, 247, 0.8);
+  border: 1px solid var(--detail-line);
+  color: var(--terracotta);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, color 0.2s, transform 0.1s;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+}
+
+.skip-btn:hover {
+  background-color: var(--text-dark);
+  color: var(--bg-color);
+}
+
+.skip-btn:active {
+  transform: scale(0.95);
+}
+
 body {
   margin: 0; /* Kills the default side gaps instantly! */
   padding-top: 60px; /* Accommodates the fixed header */
@@ -88,11 +120,6 @@ body {
 * {
   -ms-overflow-style: none; 
   scrollbar-width: none; 
-}
-
-/* Adjust main body to account for fixed header */
-body {
-  padding-top: 60px; 
 }
 
 /* The Global Header */
@@ -237,19 +264,6 @@ body {
   width: 100%;
 }
 
-/* Bookshelf Grid Layout */
-.book-grid {
-  display: grid;
-  grid-template-columns: calc(50% - 10px) calc(50% - 10px);
-  gap: 20px;
-  width: 100%;
-  
-  /* PHASE 1: Removed the bookshelf-bg.png to let the covers pop against the cream */
-  background-color: var(--bg-color); 
-  
-  padding: 20px 15px 110px 15px; 
-}
-
 .hero-wrapper {
   padding: 0 15px;
   margin-bottom: 5px; /* Reduced from 20px */
@@ -373,7 +387,7 @@ body {
   background-color: var(--bg-color);
   border-top: 1px solid rgba(0, 0, 0, 0.1);
   display: flex;
-  justify-content: space-between; /* Spreads items to the edges */
+  justify-content: space-around; /* Spreads icons evenly */
   padding: 0 30px; /* Adds safe breathing room on the far left and right */
   align-items: center;
   z-index: 10;
@@ -384,7 +398,8 @@ body {
   border: none;
   font-family: 'Courier New', Courier, monospace;
   font-size: 14px;
-  color: var(--sage-green);
+  color: #c4c0b6; /* Inactive color */
+  padding: 10px;
   cursor: pointer;
 }
 
@@ -508,186 +523,6 @@ body {
 /* Change to bottom: 0 to slide it up */
 .bottom-sheet.open {
   bottom: 0; 
-}
-
-/* Card Split Layout */
-.card-split {
-  display: grid;
-  grid-template-columns: 90px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-
-/* Override previous centering to fit the new layout */
-.card-right .book-title,
-.card-right .book-author {
-  text-align: left;
-}
-
-.sheet-handle {
-  width: 40px;
-  height: 4px;
-  background-color: #ccc;
-  border-radius: 2px;
-  margin: 0 auto 20px auto;
-}
-
-.card-hole {
-  width: 12px;
-  height: 12px;
-  background-color: var(--bg-color);
-  border-radius: 50%;
-  margin: 0 auto 15px auto;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.book-title {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 22px;
-  text-align: center;
-  margin-bottom: 5px;
-}
-
-.book-author {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 16px;
-  text-align: center;
-  color: var(--sage-green);
-  margin-bottom: 20px;
-}
-
-/* Vintage ruled lines */
-.red-line {
-  height: 2px;
-  background-color: var(--terracotta);
-  margin-bottom: 30px;
-  margin-top: 30px;
-}
-
-.detail-lines {
-  width: 100%;
-  background-image: repeating-linear-gradient(
-    transparent,
-    transparent 39px,
-    var(--detail-line) 39px,
-    var(--detail-line) 40px
-  );
-  line-height: 40px;
-  padding: 0 20px;
-  margin-top: 10px;
-}
-
-.metadata {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  margin: 0; /* Removes default paragraph spacing */
-  text-align: left;
-  flex-grow: 1; /* Takes up remaining space */
-  
-  /* Prevents text from wrapping to a new line and breaking the blue background lines */
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; 
-}
-
-.metadata-row {
-  display: flex;
-  align-items: center;
-  height: 40px; /* Matches the blue line spacing */
-}
-
-.meta-label {
-  font-family: 'Courier New', Courier, monospace;
-  color: var(--sage-green);
-  width: 100px;
-  font-weight: bold;
-}
-
-/* Dropdown Styling */
-.card-select {
-  /* Strips away the default OS styling */
-  appearance: none;
-  -webkit-appearance: none;
-  
-  /* Custom The Stacks styling */
-  background-color: transparent;
-  border: 1px solid var(--terracotta);
-  border-radius: 4px;
-  color: var(--terracotta);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 14px;
-  font-weight: bold;
-  padding: 2px 24px 2px 8px; /* Extra right padding makes room for the new arrow */
-  cursor: pointer;
-  outline: none;
-  height: 28px; /* Keeps it neatly within the 40px line row */
-  
-  /* Custom Terracotta SVG arrow */
-  background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23d35400%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
-  background-size: 10px auto;
-}
-
-/* Star Rating Styling */
-.star-rating {
-  display: flex;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.star {
-  color: #e0dcd3; /* Empty star color */
-  font-size: 24px;
-  transition: color 0.2s ease;
-}
-
-.star.active {
-  color: var(--terracotta); /* Filled star color */
-}
-
-.card-footer {
-  padding: 20px;
-  display: flex;
-  justify-content: center;
-}
-
-/* --- NEW: Focus Mode Fullscreen Toggle --- */
-#reader-toggle.fullscreen-focus {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: var(--card-bg);
-  z-index: 9999;
-  justify-content: center;
-  border-radius: 0;
-}
-
-/* Allows the GIF to scale up nicely when fullscreen */
-#reader-toggle.fullscreen-focus .cover-image {
-  width: 90%;
-  max-width: 350px;
-  height: auto;
-  aspect-ratio: auto; 
-}
-
-/* Hides the title in fullscreen */
-#reader-toggle.fullscreen-focus .cover-title {
-  display: none;
-}
-
-/* Swaps the sub-title text in fullscreen */
-#reader-toggle.fullscreen-focus .cover-author {
-  visibility: hidden; 
-}
-#reader-toggle.fullscreen-focus .cover-author::after {
-  content: 'Tap to exit';
-  visibility: visible;
-  display: block;
-  font-size: 18px;
-  margin-top: 15px;
 }
 
 /* --- PAGE VIEW ARCHITECTURE --- */
@@ -941,16 +776,6 @@ body {
 /* --- BATCH 7: NAV ICONS & FOCUS PAGE --- */
 
 /* Nav Overrides */
-.bottom-nav {
-  justify-content: space-around; /* Spreads icons evenly */
-}
-.nav-item {
-  padding: 10px;
-  color: #c4c0b6; /* Inactive color */
-}
-.nav-item.active {
-  color: var(--terracotta); /* Active color */
-}
 .nav-item svg {
   width: 26px;
   height: 26px;
@@ -1186,19 +1011,7 @@ body {
   margin-bottom: 0; /* Overrides previous spacing */
 }
 
-.scan-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 12px;
-  color: var(--sage-green);
-  border-color: var(--detail-line);
-}
-
-.scan-btn:hover {
-  background: var(--sage-green);
-  color: white;
-}
+/* Scanner Container */
 
 .scanner-container {
   margin-top: 15px;
@@ -1255,27 +1068,6 @@ body {
   border-bottom-color: var(--terracotta);
 }
 
-/* --- BATCH 8: CLICKABLE STATS --- */
-.stat-box {
-  /* Your existing styles are likely fine, just ensure it has: */
-  cursor: pointer;
-  transition: transform 0.2s ease, border-color 0.2s;
-  border: 1px solid var(--detail-line); /* Assuming they have borders */
-}
-
-.stat-box:active {
-  transform: scale(0.95);
-  border-color: var(--terracotta);
-}
-
-.stat-box h3 {
-  pointer-events: none; /* Prevents text highlighting when tapping */
-}
-
-.stat-box p {
-  pointer-events: none;
-}
-
 /* --- PHASE 1: THE WANDER DRAWER --- */
 .wander {
   /* Unified wander button */
@@ -1294,34 +1086,35 @@ body {
   box-shadow: 0 4px 6px rgba(0,0,0,0.1);
 }
 
-.wander-drawer {
-  position: fixed;
-  top: 60px; /* Sits perfectly below the header */
-  left: 0;
-  width: 100%;
-  background: var(--card-bg);
-  border-bottom: 3px solid #e0dcd3;
-  box-shadow: 0 10px 20px rgba(0,0,0,0.08);
-  z-index: 90;
-  transform: translateY(0);
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  background-color: #ccc;
+  border-radius: 2px;
+  margin: 0 auto 20px auto;
 }
 
-.wander-drawer.hidden {
-  transform: translateY(-150%);
-  box-shadow: none;
+.punch-hole {
+  width: 12px;
+  height: 12px;
+  background-color: var(--bg-color);
+  border-radius: 50%;
+  margin: 0 auto 15px auto;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.2);
 }
 
-.drawer-content {
-  padding: 20px;
-  /* Brings in the vintage paper aesthetic from the card details view */
-  background-image: repeating-linear-gradient(
-    transparent,
-    transparent 39px,
-    rgba(187, 134, 84, 0.1) 39px, /* Faint detail line */
-    rgba(187, 134, 84, 0.1) 40px
-  );
+.card-header-line {
+  border-top: 1px solid var(--detail-line);
+  margin-bottom: 15px;
 }
+
+.red-line {
+  height: 2px;
+  background-color: var(--terracotta);
+  margin-bottom: 30px;
+  margin-top: 30px;
+}
+/* Quick Filters grid and buttons */
 
 .quick-filters {
   display: grid;
@@ -1344,29 +1137,6 @@ body {
 .quick-btn:active, .quick-btn.active {
   background: var(--sage-green);
   color: var(--header-text);
-}
-
-/* --- PHASE 1: NATIVE APP STYLE DROPDOWNS --- */
-.custom-select-btn {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: var(--bg-color);
-  border: 1px solid var(--sage-green);
-  color: var(--sage-green);
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 13px;
-  padding: 8px;
-  border-radius: 6px;
-  text-align: center;
-  cursor: pointer;
-  width: 100%;
-}
-
-.custom-select-btn:focus {
-  outline: none;
-  border-color: var(--terracotta);
-  color: var(--terracotta);
 }
 
 /* --- PHASE 2: JOURNEY LAYOUTS --- */
@@ -1516,6 +1286,9 @@ body {
   flex-direction: column;
   flex-grow: 1;
   padding-top: 2px;
+  text-align: left; /* Force left-alignment */
+  align-items: flex-start;
+  height: 90px; /* Match the cover height exactly to push the stars to the bottom */
 }
 .book-grid.layout-list .book-title {
   font-family: 'Courier New', Courier, monospace; /* Synced with search result title */
@@ -1546,14 +1319,6 @@ body {
 }
 
 /* List View Explicit Overrides */
-.book-grid.layout-list .book-info {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  text-align: left; /* Force left-alignment */
-  align-items: flex-start;
-  height: 90px; /* Match the cover height exactly to push the stars to the bottom */
-}
 
 .book-grid.layout-list .book-rating {
   display: block;
@@ -1568,30 +1333,6 @@ body {
   background-color: var(--bg-color);
   padding-bottom: 80px; /* Space for the bottom nav */
 }
-
-.journal-cover {
-  width: 140px;
-  border-radius: 6px;
-  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-  margin-bottom: 20px;
-}
-
-.journal-title {
-  font-family: 'Georgia', serif;
-  font-size: 1.4rem;
-  font-weight: bold;
-  color: var(--text-dark);
-  margin: 0 0 8px 0;
-  line-height: 1.2;
-}
-
-.journal-author {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 1rem;
-  color: var(--sage-green);
-  margin: 0 0 20px 0;
-}
-
 .journal-meta-card {
   width: 100%;
   background-color: var(--card-bg);
@@ -1864,3 +1605,12 @@ body {
   margin-top: 25px;
   justify-content: center;
 }
+
+#close-details-btn:hover {
+  opacity: 0.7;
+}
+
+#close-details-btn:active {
+  transform: scale(0.95);
+}
+
