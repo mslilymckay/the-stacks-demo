@@ -8,6 +8,17 @@
   --terracotta: #A65239;     /* Deep burnt orange/brick for contrast */
   --oak-brown: #8B5E34;      /* Darkened vintage detail line */
   --detail-line: #8B5E34;
+  --sheet-bg: #ffffff;
+
+  /* Typography Design Tokens */
+  --font-serif: 'Georgia', serif;
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'Courier New', Courier, monospace;
+
+  /* Elevation Shadows */
+  --shadow-flat: none;
+  --shadow-raised: 0 4px 12px rgba(44, 62, 45, 0.05);
+  --shadow-overlay: 0 8px 24px rgba(44, 62, 45, 0.12);
 }
 
 * {
@@ -28,7 +39,7 @@
   justify-content: center;
   align-items: center;
   z-index: 9999; /* Keeps it on top of the header and grid */
-  transition: opacity 1.5s ease-out, visibility 2.2s ease-out;
+  transition: opacity 0.8s ease-in-out, visibility 0.8s ease-in-out;
 }
 
 /* We use this class to smoothly fade out the screen */
@@ -46,8 +57,8 @@
 /* Cinematic Skip Loading Screen Button - Circular Arrow */
 .skip-btn {
   position: absolute;
-  bottom: 40px;
-  right: 40px;
+  top: 20px;
+  right: 20px;
   z-index: 10000;
   background: rgba(253, 251, 247, 0.8);
   border: 1px solid var(--detail-line);
@@ -59,7 +70,7 @@
   font-weight: bold;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  display: flex;
+  display: none; /* Initially hidden until library is fully loaded */
   align-items: center;
   justify-content: center;
   transition: background-color 0.2s, color 0.2s, transform 0.1s;
@@ -584,7 +595,7 @@ body {
   width: 100%;
   padding: 12px;
   border: 1px solid var(--detail-line);
-  border-radius: 4px;
+  border-radius: 8px;
   font-family: 'Courier New', Courier, monospace;
   font-size: 16px;
   background-color: var(--card-bg);
@@ -602,7 +613,7 @@ body {
   background-color: var(--terracotta);
   color: var(--header-text);
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   font-family: 'Georgia', serif;
   font-size: 16px;
   cursor: pointer;
@@ -1612,5 +1623,190 @@ body {
 
 #close-details-btn:active {
   transform: scale(0.95);
+}
+
+/* =========================================================================
+   DESIGN SYSTEM - STANDARDIZED CLASSES & ENHANCEMENTS
+   ========================================================================= */
+
+/* --- SYSTEM FONTS OVERRIDES --- */
+body {
+  font-family: var(--font-serif) !important;
+}
+.stacks-section-heading, .stacks-subheading {
+  font-family: var(--font-mono) !important;
+}
+.stacks-subheading {
+  border-bottom: 2px solid var(--detail-line);
+  padding-bottom: 5px;
+}
+
+/* --- BUTTONS --- */
+.btn {
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 10px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.1s ease, opacity 0.2s ease, background-color 0.2s ease;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+  text-decoration: none;
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn-primary {
+  background-color: var(--terracotta);
+  color: var(--header-text);
+}
+.btn-primary:active {
+  opacity: 0.85;
+}
+.btn-secondary {
+  background-color: transparent;
+  border: 1px solid var(--sage-green);
+  color: var(--sage-green);
+}
+.btn-secondary:active {
+  background-color: rgba(89, 119, 85, 0.1);
+}
+.btn-danger {
+  background-color: transparent;
+  border: 1px solid var(--terracotta);
+  color: var(--terracotta);
+}
+.btn-danger:active {
+  background-color: rgba(166, 82, 57, 0.1);
+}
+
+/* --- FORM CONTROLS --- */
+.form-input, .form-select, .form-textarea {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  padding: 12px 15px;
+  border: 1px solid var(--detail-line);
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  color: var(--text-dark);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  box-sizing: border-box;
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  border-color: var(--terracotta);
+  box-shadow: 0 0 0 3px rgba(166, 82, 57, 0.15);
+}
+
+/* --- COVER ART ASPECT RATIO LOCK --- */
+.book-cover-container {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: rgba(139, 94, 52, 0.05); /* Placeholder tint */
+  display: block;
+}
+.book-cover-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- NOTES AUTO-SAVE STATUS --- */
+.autosave-status {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--sage-green);
+  margin-left: 10px;
+  font-style: italic;
+  display: none;
+}
+
+/* --- NOTECARD STYLING (CORNER FOLD) --- */
+.notecard {
+  position: relative;
+  background-color: var(--card-bg); /* Cream bg */
+  padding: 16px;
+  background: linear-gradient(315deg, transparent 14px, var(--card-bg) 0);
+  box-shadow: 0 4px 10px rgba(44, 62, 45, 0.1);
+  margin-bottom: 20px;
+  width: 100%;
+}
+.notecard::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  background-color: #dfd5be; /* Darker fold shade */
+  border-top-left-radius: 2px;
+}
+
+/* --- DETAILS PAGE OVERLAY TRANSITIONS --- */
+#view-details {
+  transition: transform 0.35s ease-out, opacity 0.35s ease-out;
+  transform: translateX(100%);
+  opacity: 0;
+}
+#view-details.active {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+/* --- LIBRARY SEARCH BAR WHITE BG --- */
+#local-search {
+  background: #ffffff !important;
+  border: 1px solid var(--detail-line) !important;
+}
+
+/* --- FILTERED/ACTIVE WANDER BUTTON STYLING --- */
+.header-wander-btn.active p,
+.header-wander-btn.filtered p {
+  color: var(--sage-green) !important;
+}
+.header-wander-btn.active svg,
+.header-wander-btn.filtered svg {
+  stroke: var(--sage-green) !important;
+  fill: rgba(186, 203, 179, 0.2) !important;
+}
+
+/* --- SPIN ANIMATION --- */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.animate-spin {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+/* --- TOAST NOTIFICATION STYLING --- */
+.stacks-toast {
+  position: fixed;
+  bottom: 85px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--text-dark);
+  color: var(--bg-color);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  opacity: 0;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+  z-index: 99999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.stacks-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
 }
 

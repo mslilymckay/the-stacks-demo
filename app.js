@@ -9,6 +9,38 @@ const supabaseUrl = 'https://jvsjzlvabtffhsnvmcto.supabase.co';
 const supabaseKey = 'sb_publishable_H2EPwvAaziQVz8T4yExdEw_bQrB5f3V';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Centralized Demo DB Configuration
+const TABLE_NAME = 'books_demo';
+
+// HTML Escaping Helper to prevent XSS injection
+function escapeHtml(unsafe) {
+  if (unsafe === null || unsafe === undefined) return '';
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Toast notification display helper
+function showToast(message) {
+  let toast = document.getElementById('stacks-toast-notification');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'stacks-toast-notification';
+    toast.className = 'stacks-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('show');
+  
+  if (window.toastTimeout) clearTimeout(window.toastTimeout);
+  window.toastTimeout = setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2000);
+}
+
 // Global Caches and Application State Parameters
 let globalLibraryData = [];
 let libraryYearFilter = 'all'; // Tracks if the library is currently filtered by a specific year
@@ -17,6 +49,9 @@ let returnViewId = 'view-library';
 let lastActiveTab = 'view-library';
 let previousViewId = 'view-library';
 const scrollCache = {}; 
+let lazyCoverObserver = null;
+let statsInitialized = false;
+
 
 // Cache common DOM targets to minimize layout thrashing
 const bookGrid = document.getElementById('book-grid');
@@ -30,50 +65,78 @@ const searchResultsContainer = document.getElementById('search-results-container
 // MODULE 2: USER AUTHENTICATION & INITIAL LIFE CYCLE
 // =========================================================================
 
-// Runs immediately on window load to authenticate Sarah and configure loading screen timers
+// Runs immediately on window load to authenticate Sarah, register PWA service worker, and manage loading screen
 window.addEventListener('load', async () => {
   const loadingVideo = document.getElementById('loading-video');
   const loadingScreen = document.getElementById('loading-screen');
   const authScreen = document.getElementById('auth-screen');
   const skipBtn = document.getElementById('skip-loading-btn');
   
+  // Register Service Worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./service-worker.js')
+      .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+      .catch(err => console.error('[PWA] Service Worker registration failed:', err));
+  }
+
   if (loadingVideo) loadingVideo.playbackRate = 1.5; 
 
   // 1. Silent login checking
   const { data: { session } } = await supabase.auth.getSession();
 
   if (session) {
-    loadBooks(); // User is logged in, preload database silently in the background
+    loadBooks(); 
   } else {
-    // User is not logged in, prepare login card under the veil
+    // Clear sandbox local books cache on logout/no session
+    localStorage.removeItem('the_stacks_local_books');
+    document.dispatchEvent(new CustomEvent('library-loaded'));
     if (authScreen) authScreen.classList.remove('hidden');
   }
 
-  // 2. Cinematic Loading Screen Triggers
-  const videoFadeTime = 2000; 
-  const backgroundFadeTime = 3000; 
+  // 2. Cinematic Loading Screen State Machine
+  let libraryLoaded = false;
+  let videoEnded = false;
+  let hasFadedOut = false;
 
   const fadeOutLoading = () => {
+    if (hasFadedOut) return;
+    hasFadedOut = true;
     if (loadingVideo) loadingVideo.style.opacity = '0';
-    setTimeout(() => {
-      if (loadingScreen) loadingScreen.classList.add('hidden');
-    }, 1000);
+    if (loadingScreen) {
+      loadingScreen.style.opacity = '0';
+      loadingScreen.style.transition = 'opacity 0.8s ease-in-out, visibility 0.8s ease-in-out';
+      setTimeout(() => {
+        loadingScreen.classList.add('hidden');
+      }, 800);
+    }
   };
 
-  // Run normal timeout sequence
-  const fallbackTimeout = setTimeout(fadeOutLoading, backgroundFadeTime);
-  const videoTimeout = setTimeout(() => {
-    if (loadingVideo) loadingVideo.style.opacity = '0';
-  }, videoFadeTime);
-
-  // Wire up skip button to bypass cinematic timeouts immediately
   if (skipBtn) {
-    skipBtn.addEventListener('click', () => {
-      clearTimeout(fallbackTimeout);
-      clearTimeout(videoTimeout);
-      fadeOutLoading();
-    });
+    skipBtn.addEventListener('click', fadeOutLoading);
   }
+
+  if (loadingVideo) {
+    loadingVideo.addEventListener('ended', fadeOutLoading);
+  }
+
+  document.addEventListener('library-loaded', () => {
+    libraryLoaded = true;
+    if (skipBtn && !hasFadedOut) {
+      skipBtn.style.display = 'flex'; // Skip button matches circular close style in CSS
+    }
+    if (videoEnded) {
+      fadeOutLoading();
+    }
+  });
+
+  // Fallback timeout in case loading takes too long
+  setTimeout(() => {
+    if (libraryLoaded) {
+      fadeOutLoading();
+    } else if (skipBtn) {
+      skipBtn.style.display = 'flex';
+    }
+  }, 6000);
 });
 
 // Authenticate user via Supabase and route to library dashboard
@@ -189,7 +252,7 @@ function renderHeroSection() {
     const book = activeReads[0];
     const card = document.createElement('div');
     card.className = 'carousel-item';
-    const coverUrl = getField(book, 'cover_url') || 'https://placehold.co/150x200?text=No+Cover';
+    const coverUrl = getField(book, 'cover_url') || getPlaceholderCoverUrl(book);
     card.innerHTML = `<img src="${coverUrl}" alt="${getField(book, 'title')}" class="cover-image">`;
     card.addEventListener('click', () => openDetails(book, card)); 
     
@@ -204,7 +267,7 @@ function renderHeroSection() {
     activeReads.forEach(book => {
       const card = document.createElement('div');
       card.className = 'carousel-item';
-      const coverUrl = getField(book, 'cover_url') || 'https://placehold.co/150x200?text=No+Cover';
+      const coverUrl = getField(book, 'cover_url') || getPlaceholderCoverUrl(book);
       card.innerHTML = `<img src="${coverUrl}" alt="${getField(book, 'title')}" class="cover-image">`;
       card.addEventListener('click', () => openDetails(book, card)); 
       carousel.appendChild(card);
@@ -220,7 +283,7 @@ function renderHeroSection() {
     displayReads.forEach(book => {
       const card = document.createElement('div');
       card.className = 'carousel-item';
-      const coverUrl = getField(book, 'cover_url') || 'https://placehold.co/150x200?text=No+Cover';
+      const coverUrl = getField(book, 'cover_url') || getPlaceholderCoverUrl(book);
       card.innerHTML = `<img src="${coverUrl}" alt="${getField(book, 'title')}" class="cover-image">`;
       card.addEventListener('click', () => openDetails(book, card)); 
       carousel.appendChild(card);
@@ -256,19 +319,44 @@ function renderHeroSection() {
 
 // Master book fetching initiator (Preloads database cache on login/refresh)
 async function loadBooks() {
+  const localBooksStr = localStorage.getItem('the_stacks_local_books');
+  if (localBooksStr) {
+    try {
+      globalLibraryData = JSON.parse(localBooksStr).map(b => {
+        b.category = normalizeCategory(b.category);
+        return b;
+      });
+      renderHeroSection();
+      populateFilterDropdowns();
+      applyLibraryFilters();
+      initStatsPage(); 
+      renderAnnualStats(document.getElementById('stats-year-select').value);
+      document.dispatchEvent(new CustomEvent('library-loaded'));
+      return;
+    } catch (e) {
+      console.error("Error parsing local books, falling back to Supabase fetch", e);
+    }
+  }
+
   const { data: books, error } = await supabase
-    .from('books')
+    .from(TABLE_NAME)
     .select('*')
     .order('title', { ascending: true });
 
   if (error) { console.error(error); return; }
   
-  globalLibraryData = books; 
-  calculateStats(); 
+  globalLibraryData = books.map(b => {
+    b.category = normalizeCategory(b.category);
+    return b;
+  });
+  localStorage.setItem('the_stacks_local_books', JSON.stringify(globalLibraryData));
+  
   renderHeroSection();
+  populateFilterDropdowns();
   applyLibraryFilters();
   initStatsPage(); 
   renderAnnualStats(document.getElementById('stats-year-select').value);
+  document.dispatchEvent(new CustomEvent('library-loaded'));
 }
 
 // Renders the main book catalog using user's layout preferences (Grid, Cards, List)
@@ -329,21 +417,25 @@ function renderGrid(booksToRender) {
       ratingDisplay = '★'.repeat(ratingNum) + '<span style="color: #e0dcd3;">' + '★'.repeat(5 - ratingNum) + '</span>';
     }
 
-    if (savedCover && savedCover !== 'https://placehold.co/60x90?text=No+Cover') {
+    const titleEsc = escapeHtml(title);
+    const authorEsc = escapeHtml(author);
+
+    const hasRealCover = savedCover && !savedCover.includes('placehold.co') && !savedCover.includes('placehold.it');
+    if (hasRealCover) {
       bookDiv.innerHTML = `
-        <img src="${savedCover}" data-isbn="${isbn}" alt="${title}" class="book-cover" onerror="this.src='https://placehold.co/60x90?text=No+Cover'">
+        <img src="${savedCover}" data-isbn="${isbn}" data-uuid="${book.uuid}" alt="${titleEsc}" class="book-cover" onerror="this.src=getPlaceholderCoverUrl(globalLibraryData.find(b => b.uuid === '${book.uuid}'))">
         <div class="book-info">
-          <p class="book-title">${title}</p>
-          <p class="book-author">${author}</p>
+          <p class="book-title">${titleEsc}</p>
+          <p class="book-author">${authorEsc}</p>
           <div class="book-rating">${ratingDisplay}</div>
         </div>
       `;
     } else {
       bookDiv.innerHTML = `
-        <img src="https://placehold.co/150x200?text=Loading..." data-isbn="${isbn}" alt="${title}" class="book-cover lazy-cover">
+        <img src="https://placehold.co/150x200?text=Loading..." data-isbn="${isbn}" data-uuid="${book.uuid}" alt="${titleEsc}" class="book-cover lazy-cover">
         <div class="book-info">
-          <p class="book-title">${title}</p>
-          <p class="book-author">${author}</p>
+          <p class="book-title">${titleEsc}</p>
+          <p class="book-author">${authorEsc}</p>
           <div class="book-rating">${ratingDisplay}</div>
         </div>
       `;
@@ -353,20 +445,25 @@ function renderGrid(booksToRender) {
     bookGrid.appendChild(bookDiv);
   }
 
-  // Setup Lazy image loader intersections
+  // Setup Lazy image loader intersections (with disconnect guard to prevent leaks)
+  if (lazyCoverObserver) {
+    lazyCoverObserver.disconnect();
+  }
+
   const lazyCovers = document.querySelectorAll('.lazy-cover');
-  const observer = new IntersectionObserver((entries, observer) => {
+  lazyCoverObserver = new IntersectionObserver((entries, observer) => {
     entries.forEach(entry => {
       if (entry.isIntersecting) {
         const img = entry.target;
-        const coverUrl = getCoverUrl(img.dataset.isbn);
+        const book = globalLibraryData.find(b => b.uuid === img.dataset.uuid);
+        const coverUrl = getCoverUrl(img.dataset.isbn, book);
         img.src = coverUrl;
-        img.onerror = () => { img.src = 'https://placehold.co/60x90?text=No+Cover'; };
+        img.onerror = () => { img.src = getPlaceholderCoverUrl(book); };
         observer.unobserve(img);
       }
     });
   });
-  lazyCovers.forEach(img => observer.observe(img));
+  lazyCovers.forEach(img => lazyCoverObserver.observe(img));
 }
 
 // Adjusts the Back to Top FAB display based on active panel scroll coordinates
@@ -415,28 +512,102 @@ function applyLibraryFilters() {
   let filteredBooks = [...globalLibraryData];
 
   const searchInput = document.getElementById('local-search');
-  const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+  const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
 
   const activeBtn = document.querySelector('.quick-btn.active, .filter-btn.active');
   const statusFilter = activeBtn ? activeBtn.getAttribute('data-status') : 'all';
   const sortMethod = activeBtn ? activeBtn.getAttribute('data-sort') : 'title_asc';
 
+  const filterYearEl = document.getElementById('filter-year');
+  const filterRatingEl = document.getElementById('filter-rating');
+  const filterCategoryEl = document.getElementById('filter-category');
+  const filterHasNotesEl = document.getElementById('filter-has-notes');
+  const filterMissingCoverEl = document.getElementById('filter-missing-cover');
+
+  let filterYear = filterYearEl ? filterYearEl.value : 'all';
+  if (Number(statusFilter) === 2) {
+    if (filterYearEl) {
+      filterYearEl.disabled = false;
+      filterYearEl.style.opacity = '1';
+      filterYearEl.style.cursor = 'pointer';
+    }
+  } else {
+    filterYear = 'all';
+    if (filterYearEl) {
+      filterYearEl.value = 'all';
+      filterYearEl.disabled = true;
+      filterYearEl.style.opacity = '0.5';
+      filterYearEl.style.cursor = 'not-allowed';
+    }
+  }
+  const filterRating = filterRatingEl ? filterRatingEl.value : 'all';
+  const filterCategory = filterCategoryEl ? filterCategoryEl.value : 'all';
+  const filterHasNotes = filterHasNotesEl ? filterHasNotesEl.checked : false;
+  const filterMissingCover = filterMissingCoverEl ? filterMissingCoverEl.checked : false;
+
   filteredBooks = filteredBooks.filter(book => {
+    // 1. Search filter: check title, author, notes, ISBN, category
     const title = (getField(book, 'title') || '').toLowerCase();
     const author = (getField(book, 'author') || '').toLowerCase();
-    const matchesSearch = title.includes(searchTerm) || author.includes(searchTerm);
+    const notes = (getField(book, 'notes') || '').toLowerCase();
+    const isbn = (getField(book, 'isbn') || '').toLowerCase();
+    const categoryVal = (getField(book, 'category') || '').toLowerCase();
+    
+    const matchesSearch = title.includes(searchTerm) || 
+                          author.includes(searchTerm) ||
+                          notes.includes(searchTerm) ||
+                          isbn.includes(searchTerm) ||
+                          categoryVal.includes(searchTerm);
 
+    // 2. Status filter
     const status = getField(book, 'status');
     const matchesStatus = (statusFilter === 'all' || !statusFilter) ? true : Number(status) === Number(statusFilter);
 
+    // 3. Finished Year filter (checks both quick filter year and advanced year select)
     let matchesYear = true;
+    const bookStatus = Number(getField(book, 'status'));
+    const bookReadDate = getField(book, 'read_date') || getField(book, 'date_finished');
     if (libraryYearFilter !== 'all') {
-      const bookStatus = Number(getField(book, 'status'));
-      const bookReadDate = getField(book, 'read_date') || getField(book, 'date_finished');
       matchesYear = (bookStatus === 2 && bookReadDate && String(bookReadDate).startsWith(libraryYearFilter));
+    } else if (filterYear !== 'all') {
+      matchesYear = (bookStatus === 2 && bookReadDate && String(bookReadDate).startsWith(filterYear));
     }
 
-    return matchesSearch && matchesStatus && matchesYear;
+    // 4. Rating filter
+    let matchesRating = true;
+    const bookRating = Number(getField(book, 'rating') || 0);
+    if (filterRating === '5') {
+      matchesRating = bookRating === 5;
+    } else if (filterRating === '4') {
+      matchesRating = bookRating >= 4;
+    } else if (filterRating === '3') {
+      matchesRating = bookRating >= 3;
+    } else if (filterRating === 'unrated') {
+      matchesRating = bookRating === 0;
+    }
+
+    // 5. Category filter
+    let matchesCategory = true;
+    if (filterCategory !== 'all') {
+      const bookCategory = getField(book, 'category') || 'Uncategorized';
+      matchesCategory = bookCategory === filterCategory;
+    }
+
+    // 6. Has Notes filter
+    let matchesHasNotes = true;
+    if (filterHasNotes) {
+      const bookNotes = getField(book, 'notes') || '';
+      matchesHasNotes = bookNotes.trim().length > 0;
+    }
+
+    // 7. Missing Cover filter
+    let matchesMissingCover = true;
+    if (filterMissingCover) {
+      const bookCover = getField(book, 'cover_url') || '';
+      matchesMissingCover = !bookCover || bookCover.includes('placehold.co');
+    }
+
+    return matchesSearch && matchesStatus && matchesYear && matchesRating && matchesCategory && matchesHasNotes && matchesMissingCover;
   });
 
   // Sort Mechanics
@@ -462,17 +633,97 @@ function applyLibraryFilters() {
     }
   });
 
+  // Turn Wander button green if filtered
+  const wanderTriggerBtn = document.getElementById('wander-trigger-btn');
+  const hasAdvancedFilters = filterYear !== 'all' || 
+                             filterRating !== 'all' || 
+                             filterCategory !== 'all' || 
+                             filterHasNotes || 
+                             filterMissingCover;
+
+  const isFiltered = (activeBtn && activeBtn.getAttribute('data-status') !== 'all') || 
+                     libraryYearFilter !== 'all' || 
+                     hasAdvancedFilters ||
+                     searchTerm;
+
+  if (wanderTriggerBtn) {
+    if (isFiltered) {
+      wanderTriggerBtn.classList.add('filtered');
+      wanderTriggerBtn.classList.add('active');
+    } else {
+      wanderTriggerBtn.classList.remove('filtered');
+      wanderTriggerBtn.classList.remove('active');
+    }
+  }
+
+  // Subheading text updating
   const subheading = document.getElementById('library-subheading');
   if (subheading) {
-    let headingText = activeBtn ? activeBtn.textContent.trim() : 'All Books, by Title (A-Z)'; 
-    if (libraryYearFilter !== 'all') headingText = `Finished in ${libraryYearFilter}`;
-    if (searchTerm) headingText += ` (Searching: "${searchTerm}")`; 
+    let headingText = '';
+    if (searchTerm) {
+      headingText = 'Refine Search';
+    } else {
+      const baseFilterName = activeBtn ? activeBtn.textContent.replace(' ✕', '').trim() : 'All Books';
+      
+      let customFiltersCount = 0;
+      if (filterYear !== 'all') customFiltersCount++;
+      if (filterRating !== 'all') customFiltersCount++;
+      if (filterCategory !== 'all') customFiltersCount++;
+      if (filterHasNotes) customFiltersCount++;
+      if (filterMissingCover) customFiltersCount++;
+      
+      if (customFiltersCount > 0) {
+        headingText = `${baseFilterName} +${customFiltersCount}`;
+      } else {
+        headingText = activeBtn ? baseFilterName : 'All Books, by Title (A-Z)';
+      }
+    }
     subheading.textContent = headingText;
   }
 
   window.lastAppliedSort = sortMethod; 
   renderGrid(filteredBooks);
   updateQuickFilterButtonsUI();
+}
+
+function populateFilterDropdowns() {
+  const filterYearSelect = document.getElementById('filter-year');
+  const filterCategorySelect = document.getElementById('filter-category');
+  if (!filterYearSelect || !filterCategorySelect) return;
+
+  const currentYearVal = filterYearSelect.value;
+  const currentCategoryVal = filterCategorySelect.value;
+
+  const finishedYears = [...new Set(globalLibraryData
+    .filter(b => Number(getField(b, 'status')) === 2 && (getField(b, 'read_date') || getField(b, 'date_finished')))
+    .map(b => {
+      const readDate = getField(b, 'read_date') || getField(b, 'date_finished');
+      return String(readDate).split('-')[0];
+    })
+    .filter(Boolean)
+  )].sort((a, b) => b - a);
+
+  filterYearSelect.innerHTML = '<option value="all">All Years</option>';
+  finishedYears.forEach(year => {
+    const opt = document.createElement('option');
+    opt.value = year;
+    opt.textContent = year;
+    filterYearSelect.appendChild(opt);
+  });
+  if (finishedYears.includes(currentYearVal)) filterYearSelect.value = currentYearVal;
+
+  const categories = [...new Set(globalLibraryData
+    .map(b => normalizeCategory(getField(b, 'category')))
+  )].sort();
+
+  filterCategorySelect.innerHTML = '<option value="all">All Categories</option>';
+  categories.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat;
+    opt.textContent = cat;
+    filterCategorySelect.appendChild(opt);
+  });
+  if (categories.includes(currentCategoryVal)) filterCategorySelect.value = currentCategoryVal;
 }
 
 function updateQuickFilterButtonsUI() {
@@ -499,7 +750,9 @@ const localSearchInput = document.getElementById('local-search');
 const quickBtns = document.querySelectorAll('.quick-btn, .filter-btn');
 
 if (wanderTriggerBtn && wanderSheet) {
-  wanderTriggerBtn.addEventListener('click', () => wanderSheet.classList.add('open'));
+  wanderTriggerBtn.addEventListener('click', () => {
+    wanderSheet.classList.add('open');
+  });
   
   const wanderHandle = wanderSheet.querySelector('.sheet-handle');
   if (wanderHandle) wanderHandle.addEventListener('click', () => wanderSheet.classList.remove('open'));
@@ -517,16 +770,59 @@ if (wanderTriggerBtn && wanderSheet) {
       }
       
       applyLibraryFilters(); 
-      wanderSheet.classList.remove('open');
       const activeView = document.querySelector('.page-view.active');
       if (activeView) activeView.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
+
+  const applyFiltersBtn = document.getElementById('btn-apply-filters');
+  if (applyFiltersBtn) {
+    applyFiltersBtn.addEventListener('click', () => {
+      applyLibraryFilters();
+      wanderSheet.classList.remove('open');
+    });
+  }
+
+  const clearFiltersBtn = document.getElementById('btn-clear-filters');
+  if (clearFiltersBtn) {
+    clearFiltersBtn.addEventListener('click', () => {
+      libraryYearFilter = 'all';
+      quickBtns.forEach(b => {
+        b.classList.remove('active');
+        b.style.background = '';
+        b.style.color = '';
+      });
+      document.querySelectorAll('.hero-pill-btn').forEach(b => b.classList.remove('active'));
+
+      const filterYearEl = document.getElementById('filter-year');
+      const filterRatingEl = document.getElementById('filter-rating');
+      const filterCategoryEl = document.getElementById('filter-category');
+      const filterHasNotesEl = document.getElementById('filter-has-notes');
+      const filterMissingCoverEl = document.getElementById('filter-missing-cover');
+
+      if (filterYearEl) filterYearEl.value = 'all';
+      if (filterRatingEl) filterRatingEl.value = 'all';
+      if (filterCategoryEl) filterCategoryEl.value = 'all';
+      if (filterHasNotesEl) filterHasNotesEl.checked = false;
+      if (filterMissingCoverEl) filterMissingCoverEl.checked = false;
+
+      // Clear search input
+      const searchInput = document.getElementById('local-search');
+      if (searchInput) {
+        searchInput.value = '';
+        const clearBtn = document.getElementById('clear-search-btn');
+        if (clearBtn) clearBtn.style.display = 'none';
+      }
+
+      applyLibraryFilters();
+      wanderSheet.classList.remove('open');
+    });
+  }
 }
 
 // Syncs manual search/dropdown events and clear search button visibility
 const clearSearchBtn = document.getElementById('clear-search-btn');
-const submitSearchBtn = document.getElementById('submit-search-btn');
+let searchDebounceTimeout;
 
 if (localSearchInput) {
   localSearchInput.addEventListener('input', () => {
@@ -537,11 +833,15 @@ if (localSearchInput) {
         clearSearchBtn.style.display = 'none';
       }
     }
-    applyLibraryFilters();
+    clearTimeout(searchDebounceTimeout);
+    searchDebounceTimeout = setTimeout(() => {
+      applyLibraryFilters();
+    }, 200); // 200ms debounce
   });
 
   localSearchInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
+      clearTimeout(searchDebounceTimeout);
       applyLibraryFilters();
       if (wanderSheet) wanderSheet.classList.remove('open');
     }
@@ -552,16 +852,25 @@ if (clearSearchBtn) {
   clearSearchBtn.addEventListener('click', () => {
     if (localSearchInput) localSearchInput.value = '';
     clearSearchBtn.style.display = 'none';
+    clearTimeout(searchDebounceTimeout);
     applyLibraryFilters();
   });
 }
 
-if (submitSearchBtn) {
-  submitSearchBtn.addEventListener('click', () => {
-    applyLibraryFilters();
-    if (wanderSheet) wanderSheet.classList.remove('open');
+// Setup advanced filter change listeners
+const setupAdvancedFilters = () => {
+  const elements = ['filter-year', 'filter-rating', 'filter-category', 'filter-has-notes', 'filter-missing-cover'];
+  elements.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('change', () => {
+        applyLibraryFilters();
+      });
+    }
   });
-}
+};
+setupAdvancedFilters();
+
 
 // Swipe to close gestures implementation for drawers
 let touchStartY = 0;
@@ -665,42 +974,30 @@ function openDetails(book, clickedElement) {
   
   const title = getField(book, 'title') || 'Unknown Title';
   const author = getField(book, 'author') || 'Unknown Author';
-  const coverUrl = getField(book, 'cover_url') || 'https://placehold.co/60x90?text=No+Cover';
+  const coverUrl = getField(book, 'cover_url') || getPlaceholderCoverUrl(book);
   const ratingNum = Number(getField(book, 'rating')) || 0;
   const statusNum = String(getField(book, 'status') || '0');
   const notes = getField(book, 'notes') || '';
   
-  const formatStandardDate = (iso) => {
-    if (!iso) return '--';
-    const d = new Date(iso);
-    if (isNaN(d)) return '--';
-    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${d.getFullYear()}`;
-  };
+  const titleEsc = escapeHtml(title);
+  const authorEsc = escapeHtml(author);
+  const notesEsc = escapeHtml(notes);
   
   const rawDateAdded = getField(book, 'created_at') || getField(book, 'date_added');
-  const dateAdded = formatDate(rawDateAdded) || '--';
+  const dateAdded = formatVintageDate(rawDateAdded, 'meta');
 
   const rawStarted = getField(book, 'date_started');
-  const startedVal = rawStarted ? new Date(rawStarted).toISOString().split('T')[0] : '';
-  const startedText = rawStarted ? formatStandardDate(rawStarted) : '';
+  const startedVal = formatVintageDate(rawStarted, 'input');
 
   const rawFinished = getField(book, 'read_date') || getField(book, 'date_finished');
-  const finishedVal = rawFinished ? new Date(rawFinished).toISOString().split('T')[0] : '';
-  const finishedText = rawFinished ? formatStandardDate(rawFinished) : '';
+  const finishedVal = formatVintageDate(rawFinished, 'input');
 
-  const formatVintageDate = (iso) => {
-    if (!iso) return 'mm-dd-yy';
-    const d = new Date(iso);
-    if (isNaN(d)) return 'mm-dd-yy';
-    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${String(d.getFullYear()).slice(-2)}`;
-  };
-
-  // Stamp renders
+  // Stamp renders (no time-of-day or ISO on visual stamp)
   let stampsHtml = '';
   if (statusNum === '1') { 
-    stampsHtml = `<div class="stamp-container"><span class="stamp stamp-started">STARTED<br/>${formatVintageDate(rawStarted)}</span></div>`;
+    stampsHtml = `<div class="stamp-container"><span class="stamp stamp-started">STARTED<br/>${formatVintageDate(rawStarted, 'stamp')}</span></div>`;
   } else if (statusNum === '2') { 
-    stampsHtml = `<div class="stamp-container"><span class="stamp stamp-finished">FINISHED<br/>${formatVintageDate(rawFinished)}</span></div>`;
+    stampsHtml = `<div class="stamp-container"><span class="stamp stamp-finished">FINISHED<br/>${formatVintageDate(rawFinished, 'stamp')}</span></div>`;
   }
 
   // Interactive Stars
@@ -710,35 +1007,42 @@ function openDetails(book, clickedElement) {
   }
   starsHtml += `</div>`;
 
-  // Missing Cover resolution UX logic
-  const hasPlaceholderCover = !coverUrl || coverUrl.includes('placehold.co');
-  let coverHtml = '';
-  if (hasPlaceholderCover) {
-    coverHtml = `
-      <div id="details-cover-container" class="special-card" style="position: relative; width: 110px; height: 165px; border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); background: var(--card-bg); flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s;" title="Resolve cover from Google Books">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--sage-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 5px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <span style="font-family: 'Courier New'; font-size: 0.75rem; color: var(--sage-green); font-weight: bold; text-align: center; padding: 0 5px;">Find Cover</span>
-        <span style="font-size: 0.65rem; color: var(--text-dark); margin-top: 2px;">Tap to search</span>
-      </div>
+  // Missing Cover resolution UX logic (Tapping cover triggers sync)
+  const coverHtml = `
+    <div id="details-cover-container" style="cursor: pointer; position: relative; width: 110px; height: 165px; border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); flex-shrink: 0; background: var(--card-bg); overflow: hidden; display: flex; align-items: center; justify-content: center;" title="Tap cover to search and sync details">
+      <img src="${coverUrl}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src=getPlaceholderCoverUrl(globalLibraryData.find(b => b.uuid === '${book.uuid}'))">
+    </div>
+  `;
+
+  // Dynamic state-based primary action button
+  let stateActionBtnHtml = '';
+  if (statusNum === '0') {
+    stateActionBtnHtml = `
+      <button id="btn-state-action" class="details-pill-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: var(--sage-green); color: var(--bg-color); border: none; padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Start reading this book">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Start
+      </button>
+    `;
+  } else if (statusNum === '1') {
+    stateActionBtnHtml = `
+      <button id="btn-state-action" class="details-pill-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: var(--terracotta); color: var(--bg-color); border: none; padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Mark this book as finished">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        Finish
+      </button>
     `;
   } else {
-    coverHtml = `
-      <img src="${coverUrl}" style="width: 110px; border-radius: 6px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); flex-shrink: 0;" onerror="this.src='https://placehold.co/60x90?text=No+Cover'">
-    `;
-  }
-
-  // Action buttons bar redesign (using text + inline SVGs)
-  const actionBarHtml = `
-    <div class="details-action-bar" style="display: flex; gap: 10px; width: 100%; margin-top: 15px; margin-bottom: 15px; flex-wrap: wrap;">
-      <button id="btn-read-again" class="details-pill-btn" style="flex: 1; min-width: 105px; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: var(--sage-green); color: var(--bg-color); border: none; padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Start a new reading journey">
+    stateActionBtnHtml = `
+      <button id="btn-read-again" class="details-pill-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: var(--sage-green); color: var(--bg-color); border: none; padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Start a new reading journey">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
         Read Again
       </button>
-      <button id="btn-refresh-book" class="details-pill-btn" style="flex: 1; min-width: 105px; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: transparent; color: var(--text-dark); border: 1px solid var(--detail-line); padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Sync details with Google Books">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        Find Cover
-      </button>
-      <button id="btn-delete-book" class="details-pill-btn" style="flex: 1; min-width: 105px; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: transparent; color: var(--terracotta); border: 1px solid var(--terracotta); padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Delete this book">
+    `;
+  }
+
+  const actionBarHtml = `
+    <div class="details-action-bar" style="display: flex; gap: 10px; width: 100%; margin-top: 15px; margin-bottom: 10px;">
+      ${stateActionBtnHtml}
+      <button id="btn-delete-book" class="details-pill-btn" style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: transparent; color: var(--terracotta); border: 1px solid var(--terracotta); padding: 10px 12px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 0.8rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;" title="Delete this book">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
         Delete
       </button>
@@ -747,79 +1051,95 @@ function openDetails(book, clickedElement) {
 
   const pencilSvg = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5;"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>`;
 
+  const existingCategories = [...new Set(globalLibraryData
+    .map(b => normalizeCategory(getField(b, 'category')))
+    .filter(Boolean)
+  )].sort();
+  if (!existingCategories.includes('Uncategorized')) {
+    existingCategories.push('Uncategorized');
+  }
+  const currentCategory = normalizeCategory(getField(book, 'category'));
+
+  let categorySelectHtml = `<select id="inline-category" class="inline-edit-input" style="padding: 2px 0; font-size: 0.85rem; border: none; background: transparent; cursor: pointer; pointer-events: auto; max-width: 150px; text-overflow: ellipsis; outline: none; font-weight: bold; color: var(--text-dark); font-family: 'Courier New', monospace; text-align: right; text-align-last: right;">`;
+  existingCategories.forEach(cat => {
+    const isSelected = currentCategory === cat;
+    const displayCat = trimCategory(cat, 20);
+    categorySelectHtml += `<option value="${escapeHtml(cat)}" ${isSelected ? 'selected' : ''}>${escapeHtml(displayCat)}</option>`;
+  });
+  categorySelectHtml += `<option value="__ADD_NEW__" style="color: var(--terracotta); font-weight: bold;">+ Add New...</option></select>`;
+
   journalContent.innerHTML = `
-    <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%; text-align: left; margin-bottom: 10px;">
+    <div style="display: flex; gap: 20px; align-items: flex-start; width: 100%; text-align: left; margin-bottom: 15px;">
       ${coverHtml}
       <div style="flex-grow: 1; min-width: 0;">
-        <h2 style="font-family: 'Georgia', serif; font-size: 1.25rem; font-weight: bold; color: var(--text-dark); margin: 0 0 4px 0; line-height: 1.2; overflow-wrap: break-word;">${title}</h2>
-        <p style="font-family: 'Courier New'; font-size: 0.9rem; color: var(--sage-green); margin: 0 0 10px 0;">by ${author}</p>
+        <h2 style="font-family: var(--font-serif); font-size: 1.25rem; font-weight: bold; color: var(--text-dark); margin: 0 0 4px 0; line-height: 1.2; overflow-wrap: break-word;">${titleEsc}</h2>
+        <p style="font-family: 'Courier New', Courier, monospace; font-size: 0.9rem; color: var(--sage-green); margin: 0 0 10px 0; font-weight: bold;">by ${authorEsc}</p>
         ${starsHtml}
         ${stampsHtml}
       </div>
     </div>
 
-    <div style="display: flex; flex-direction: column; width: 100%; margin-bottom: 15px;">
-      <div class="journal-meta-card" style="width: 100%;">
-        <div class="meta-row">
-          <span class="meta-label">Status:</span> 
-          <div class="input-with-icon">
-            <select id="inline-status" class="inline-edit-input">
-              <option value="0" ${statusNum === '0' ? 'selected' : ''}>TBR</option>
-              <option value="1" ${statusNum === '1' ? 'selected' : ''}>Reading</option>
-              <option value="2" ${statusNum === '2' ? 'selected' : ''}>Finished</option>
-              <option value="3" ${statusNum === '3' ? 'selected' : ''}>Gave Up</option>
-            </select>
-            <span class="pencil-trigger" data-target="inline-status">${pencilSvg}</span>
-          </div>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Added:</span> 
-          <div class="input-with-icon">
-            <span class="meta-value" style="font-weight: bold;">${dateAdded}</span>
-            <svg width="14" height="14" style="opacity: 0;"></svg> </div>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Started:</span> 
-          <div class="input-with-icon">
-            <input type="date" id="inline-started" class="inline-edit-input" value="${startedVal}">
-            <span class="pencil-trigger" data-target="inline-started">${pencilSvg}</span>
-          </div>
-        </div>
-        <div class="meta-row">
-          <span class="meta-label">Finished:</span> 
-          <div class="input-with-icon">
-            <input type="date" id="inline-finished" class="inline-edit-input" value="${finishedVal}">
-            <span class="pencil-trigger" data-target="inline-finished">${pencilSvg}</span>
-          </div>
+    <div class="journal-meta-card" style="width: 100%;">
+      <div class="meta-row">
+        <span class="meta-label">Status:</span> 
+        <div class="input-with-icon">
+          <select id="inline-status" class="inline-edit-input" style="padding: 2px 0; font-size: 0.85rem; border: none; background: transparent; cursor: pointer; pointer-events: auto;">
+            <option value="0" ${statusNum === '0' ? 'selected' : ''}>TBR</option>
+            <option value="1" ${statusNum === '1' ? 'selected' : ''}>Reading</option>
+            <option value="2" ${statusNum === '2' ? 'selected' : ''}>Finished</option>
+            <option value="3" ${statusNum === '3' ? 'selected' : ''}>Gave Up</option>
+          </select>
+          <span class="pencil-trigger" data-target="inline-status" style="margin-left: 4px;">${pencilSvg}</span>
         </div>
       </div>
-      
-      ${actionBarHtml}
+      <div class="meta-row">
+        <span class="meta-label">Added:</span> 
+        <div class="input-with-icon">
+          <span class="meta-value" style="font-weight: bold;">${dateAdded}</span>
+          <svg width="14" height="14" style="opacity: 0;"></svg>
+        </div>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Started:</span> 
+        <div class="input-with-icon">
+          <input type="date" id="inline-started" class="inline-edit-input" style="padding: 2px 0; font-size: 0.85rem; border: none; background: transparent; cursor: pointer; pointer-events: auto;" value="${startedVal}">
+          <span class="pencil-trigger" data-target="inline-started" style="margin-left: 4px;">${pencilSvg}</span>
+        </div>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Finished:</span> 
+        <div class="input-with-icon">
+          <input type="date" id="inline-finished" class="inline-edit-input" style="padding: 2px 0; font-size: 0.85rem; border: none; background: transparent; cursor: pointer; pointer-events: auto;" value="${finishedVal}">
+          <span class="pencil-trigger" data-target="inline-finished" style="margin-left: 4px;">${pencilSvg}</span>
+        </div>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">ISBN:</span> 
+        <div class="input-with-icon">
+          <span class="meta-value" style="font-weight: bold;">${getField(book, 'isbn') || '--'}</span>
+          <svg width="14" height="14" style="opacity: 0;"></svg>
+        </div>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Category:</span> 
+        <div class="input-with-icon">
+          ${categorySelectHtml}
+          <span class="pencil-trigger" data-target="inline-category" style="margin-left: 4px;">${pencilSvg}</span>
+        </div>
+      </div>
     </div>
 
-    <div style="width: 100%; text-align: left;">
-      <h3 style="font-family: 'Courier New'; color: var(--terracotta); margin: 0 0 10px 0; font-size: 1rem;">Notes</h3>
-      <div style="position: relative;">
-        <textarea id="journal-notes-area" class="journal-notes-input" placeholder="Tap to add your thoughts...">${notes}</textarea>
-        <button id="btn-save-notes" style="position: absolute; bottom: 12px; right: 12px; background: var(--terracotta); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-family: 'Courier New'; font-weight: bold; cursor: pointer; display: none;">Save</button>
-      </div>
+    ${actionBarHtml}
+
+    <div style="width: 100%; text-align: left; margin-top: 15px;">
+      <h3 style="font-family: 'Courier New', Courier, monospace; color: var(--terracotta); margin: 0 0 10px 0; font-size: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        Notes <span id="autosave-indicator" class="autosave-status" style="display: none;">saving...</span>
+      </h3>
+      <textarea id="journal-notes-area" class="journal-notes-input" placeholder="Tap to add your thoughts...">${notesEsc}</textarea>
     </div>
   `;
 
-  // Control details header shadows on scroll
   const detailsContainer = document.getElementById('view-details');
-  const detailsHeader = document.querySelector('.details-header');
-  if (detailsContainer && detailsHeader) {
-    detailsContainer.addEventListener('scroll', () => {
-      if (detailsContainer.scrollTop > 50) {
-        detailsHeader.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-        detailsHeader.style.borderBottom = '1px solid rgba(0,0,0,0.1)';
-      } else {
-        detailsHeader.style.boxShadow = 'none';
-        detailsHeader.style.borderBottom = 'none';
-      }
-    });
-  }
   
   pageViews.forEach(view => view.classList.remove('active'));
   if (detailsContainer) {
@@ -857,36 +1177,30 @@ function openDetails(book, clickedElement) {
       const targetId = trigger.getAttribute('data-target');
       const targetInput = document.getElementById(targetId);
       if (targetInput) {
-        try {
-          targetInput.showPicker();
-        } catch (err) {
-          console.error('showPicker failed, falling back to focus/click:', err);
+        if (targetInput.tagName === 'INPUT' && targetInput.type === 'date') {
+          try {
+            targetInput.showPicker();
+          } catch (err) {
+            console.error('showPicker failed, falling back to focus/click:', err);
+            targetInput.focus();
+            targetInput.click();
+          }
+        } else {
           targetInput.focus();
-          targetInput.click();
+          if (targetInput.select) targetInput.select();
         }
       }
     });
   });
 
-  // Inline Status Change dropdown listener
+  // Inline Status Change dropdown listener (Remove auto-dating from select dropdown)
   document.getElementById('inline-status').addEventListener('change', async (e) => {
     const newStatus = parseInt(e.target.value);
     const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
-    const todayIso = new Date().toISOString();
     
-    const updates = { status: newStatus };
-    
-    if (newStatus === 1) { 
-      updates.date_started = todayIso;
-      updates.read_date = null;
-    } else if (newStatus === 2) { 
-      updates.read_date = todayIso;
-    }
-    
-    await updateMultipleBookFields(updates);
+    await updateMultipleBookFields({ status: newStatus });
     
     renderHeroSection();
-    calculateStats();
     openDetails(updatedBook); 
     applyLibraryFilters(); 
   });
@@ -899,21 +1213,28 @@ function openDetails(book, clickedElement) {
     if (!rawInput) {
       await updateBookData('date_started', null);
     } else {
-      const [year, month, day] = rawInput.split('-');
-      const isoString = new Date(year, month - 1, day).toISOString();
-      
-      // Validation: Start Date cannot be in the future
+      const finishedInput = document.getElementById('inline-finished').value;
+      const startedDate = new Date(rawInput);
       const today = new Date();
-      today.setHours(23, 59, 59, 999);
-      if (new Date(year, month - 1, day) > today) {
-        alert("Start date cannot be in the future.");
+      
+      if (startedDate > today) {
+        await showStacksModal("Error", "Start date cannot be in the future.", false);
         const currentStarted = getField(updatedBook, 'date_started');
-        e.target.value = currentStarted ? currentStarted.split('T')[0] : '';
+        e.target.value = currentStarted ? formatVintageDate(currentStarted, 'input') : '';
         return;
       }
-
-      await updateBookData('date_started', isoString);
+      
+      if (finishedInput && startedDate > new Date(finishedInput)) {
+        await showStacksModal("Error", "Start date cannot be after the Finished date.", false);
+        const currentStarted = getField(updatedBook, 'date_started');
+        e.target.value = currentStarted ? formatVintageDate(currentStarted, 'input') : '';
+        return;
+      }
+      
+      await updateBookData('date_started', rawInput);
     }
+    renderHeroSection();
+    applyLibraryFilters();
     openDetails(updatedBook);
   });
 
@@ -925,44 +1246,33 @@ function openDetails(book, clickedElement) {
     if (!rawInput) {
       await updateBookData('read_date', null);
     } else {
-      const [year, month, day] = rawInput.split('-');
-      const newDateObj = new Date(year, month - 1, day);
-      
-      const today = new Date();
-      today.setHours(23, 59, 59, 999); 
-
       const startedInput = document.getElementById('inline-started').value;
-      let startedDateObj = null;
-      if (startedInput) {
-         const [sYear, sMonth, sDay] = startedInput.split('-');
-         startedDateObj = new Date(sYear, sMonth - 1, sDay);
-      }
-
-      if (newDateObj > today) {
-        alert("Finished date cannot be in the future.");
+      const finishedDate = new Date(rawInput);
+      const today = new Date();
+      
+      if (finishedDate > today) {
+        await showStacksModal("Error", "Finished date cannot be in the future.", false);
         const currentFinished = getField(updatedBook, 'read_date') || getField(updatedBook, 'date_finished');
-        e.target.value = currentFinished ? currentFinished.split('T')[0] : '';
+        e.target.value = currentFinished ? formatVintageDate(currentFinished, 'input') : '';
         return;
       }
       
-      if (startedDateObj && newDateObj < startedDateObj) {
-        alert("Finished date cannot be before the Started date.");
+      if (startedInput && finishedDate < new Date(startedInput)) {
+        await showStacksModal("Error", "Finished date cannot be before the Started date.", false);
         const currentFinished = getField(updatedBook, 'read_date') || getField(updatedBook, 'date_finished');
-        e.target.value = currentFinished ? currentFinished.split('T')[0] : '';
+        e.target.value = currentFinished ? formatVintageDate(currentFinished, 'input') : '';
         return;
       }
 
-      const isoString = newDateObj.toISOString();
       await updateMultipleBookFields({
-        read_date: isoString,
+        read_date: rawInput,
         status: 2
       });
     }
 
     renderHeroSection();
-    calculateStats();
-    openDetails(updatedBook);
     applyLibraryFilters();
+    openDetails(updatedBook);
   });
 
   // Star Ratings Editor
@@ -983,38 +1293,91 @@ function openDetails(book, clickedElement) {
     });
   });
 
-  // Notes Autosave bindings
+  // Notes Autosave bindings with debounced autosave
   const notesArea = document.getElementById('journal-notes-area');
-  const saveNotesBtn = document.getElementById('btn-save-notes');
+  const autosaveIndicator = document.getElementById('autosave-indicator');
+  let saveTimeout;
   
-  notesArea.addEventListener('input', () => saveNotesBtn.style.display = 'block');
+  if (notesArea) {
+    const saveNotesData = async () => {
+      if (autosaveIndicator) {
+        autosaveIndicator.textContent = 'saving...';
+        autosaveIndicator.style.display = 'inline';
+      }
+      await updateBookData('notes', notesArea.value);
+      if (autosaveIndicator) {
+        autosaveIndicator.textContent = 'saved';
+        setTimeout(() => {
+          if (autosaveIndicator.textContent === 'saved') {
+            autosaveIndicator.style.display = 'none';
+          }
+        }, 1500);
+      }
+    };
 
-  saveNotesBtn.addEventListener('click', async () => {
-    saveNotesBtn.textContent = 'Saved!';
-    saveNotesBtn.style.background = 'var(--sage-green)';
-    
-    await updateBookData('notes', notesArea.value);
-    
-    setTimeout(() => {
-      saveNotesBtn.style.display = 'none';
-      saveNotesBtn.textContent = 'Save';
-      saveNotesBtn.style.background = 'var(--terracotta)';
-    }, 1500);
-  });
+    notesArea.addEventListener('input', () => {
+      if (autosaveIndicator) {
+        autosaveIndicator.textContent = 'saving...';
+        autosaveIndicator.style.display = 'inline';
+      }
+      clearTimeout(saveTimeout);
+      saveTimeout = setTimeout(saveNotesData, 1000);
+    });
 
-  // Sync details from Google Books (Refactored to optimize DB calls)
+    notesArea.addEventListener('blur', () => {
+      clearTimeout(saveTimeout);
+      saveNotesData();
+    });
+  }
+
+
+
+  // Inline Category editor change listener
+  const categoryInput = document.getElementById('inline-category');
+  if (categoryInput) {
+    categoryInput.addEventListener('change', async (e) => {
+      const val = e.target.value;
+      if (val === '__ADD_NEW__') {
+        const newCat = await showPromptModal("Custom Category", "Enter a name for the new category:", "e.g. History, Biography...");
+        if (newCat && newCat.trim().length > 0) {
+          const normalized = normalizeCategory(newCat);
+          await updateBookData('category', normalized);
+          const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
+          populateFilterDropdowns();
+          applyLibraryFilters();
+          openDetails(updatedBook);
+        } else {
+          const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
+          openDetails(updatedBook);
+        }
+      } else {
+        await updateBookData('category', val);
+        const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
+        populateFilterDropdowns();
+        applyLibraryFilters();
+        openDetails(updatedBook);
+      }
+    });
+  }
+
+  // Sync details from Google Books (Tapping cover placeholder)
   const triggerGoogleBooksSync = async () => {
     const coverContainer = document.getElementById('details-cover-container');
-    const syncBtn = document.getElementById('btn-refresh-book');
-    
     if (coverContainer) {
-      coverContainer.style.background = 'rgba(139, 94, 52, 0.1)';
-      coverContainer.innerHTML = `<span style="font-family: 'Courier New'; font-size: 0.75rem; color: var(--sage-green); font-weight: bold;">Syncing...</span>`;
-    }
-    if (syncBtn) {
-      syncBtn.style.opacity = '0.5';
-      syncBtn.style.pointerEvents = 'none';
-      syncBtn.innerHTML = 'Syncing...';
+      coverContainer.style.background = 'var(--card-bg)';
+      coverContainer.style.border = '2px dashed var(--sage-green)';
+      coverContainer.style.boxShadow = 'none'; // Avoid double shadow
+      coverContainer.style.display = 'flex';
+      coverContainer.style.flexDirection = 'column';
+      coverContainer.style.alignItems = 'center';
+      coverContainer.style.justifyContent = 'center';
+      coverContainer.innerHTML = `
+        <svg class="animate-spin" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--sage-green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px;">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+        </svg>
+        <span style="font-family: 'Courier New'; font-size: 0.7rem; color: var(--sage-green); font-weight: bold; text-align: center; padding: 0 5px;">Syncing...</span>
+      `;
     }
 
     const isbn = getField(book, 'isbn');
@@ -1047,15 +1410,14 @@ function openDetails(book, clickedElement) {
         const updates = {};
         if (volumeInfo.imageLinks?.thumbnail) updates.cover_url = volumeInfo.imageLinks.thumbnail.replace('http:', 'https:');
         if (volumeInfo.pageCount) updates.pages = volumeInfo.pageCount;
-        if (volumeInfo.categories?.length > 0) updates.category = volumeInfo.categories[0];
+        if (volumeInfo.categories?.length > 0) updates.category = normalizeCategory(volumeInfo.categories[0]);
         
         await updateMultipleBookFields(updates);
-        
         const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
         openDetails(updatedBook);
         applyLibraryFilters();
       } else {
-        await showStacksModal('Not Found', 'Could not find matching book details.');
+        await showStacksModal('Not Found', 'Could not find matching book details.', false);
         resetSyncUI();
       }
     } catch (error) {
@@ -1066,21 +1428,12 @@ function openDetails(book, clickedElement) {
 
   const resetSyncUI = () => {
     const coverContainer = document.getElementById('details-cover-container');
-    const syncBtn = document.getElementById('btn-refresh-book');
     if (coverContainer) {
       coverContainer.style.background = 'var(--card-bg)';
       coverContainer.innerHTML = `
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--sage-green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 5px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
         <span style="font-family: 'Courier New'; font-size: 0.75rem; color: var(--sage-green); font-weight: bold; text-align: center; padding: 0 5px;">Find Cover</span>
         <span style="font-size: 0.65rem; color: var(--text-dark); margin-top: 2px;">Tap to search</span>
-      `;
-    }
-    if (syncBtn) {
-      syncBtn.style.opacity = '1';
-      syncBtn.style.pointerEvents = 'auto';
-      syncBtn.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        Find Cover
       `;
     }
   };
@@ -1091,60 +1444,81 @@ function openDetails(book, clickedElement) {
     detailsCoverContainer.addEventListener('click', triggerGoogleBooksSync);
   }
 
-  // Bind Sync Info action button click event
-  document.getElementById('btn-refresh-book').addEventListener('click', triggerGoogleBooksSync);
+  // Bind Primary CTA Button click
+  const stateActionBtn = document.getElementById('btn-state-action');
+  if (stateActionBtn) {
+    stateActionBtn.addEventListener('click', async () => {
+      const updatedBook = globalLibraryData.find(b => b.uuid === currentOpenBookId);
+      if (!updatedBook) return;
+      
+      const currentStatus = Number(getField(updatedBook, 'status') || 0);
+      const today = getLocalDateString();
+      
+      if (currentStatus === 0) {
+        await updateMultipleBookFields({
+          status: 1,
+          date_started: today
+        });
+        showToast("Started reading!");
+      } else if (currentStatus === 1) {
+        await updateMultipleBookFields({
+          status: 2,
+          read_date: today
+        });
+        showToast("Finished reading!");
+      }
+      
+      renderHeroSection();
+      openDetails(updatedBook);
+      applyLibraryFilters();
+    });
+  }
 
   // Read Again duplicate duplicator
-  document.getElementById('btn-read-again').addEventListener('click', async () => {
-    const userConfirmed = await showStacksModal("Read Again", "Start a new reading journey for this book? This duplicates the entry so you can log new dates and notes.", true);
-    
-    if (userConfirmed) {
-      const duplicate = {
-        uuid: crypto.randomUUID(),
-        title: getField(book, 'title'),
-        author: getField(book, 'author'),
-        isbn: getField(book, 'isbn'),
-        cover_url: getField(book, 'cover_url'),
-        pages: getField(book, 'pages'),
-        category: getField(book, 'category'),
-        status: 1, 
-        date_started: new Date().toISOString(),
-        read_date: null,
-        rating: 0,
-        notes: null
-      };
+  const btnReadAgain = document.getElementById('btn-read-again');
+  if (btnReadAgain) {
+    btnReadAgain.addEventListener('click', async () => {
+      const userConfirmed = await showStacksModal("Read Again", "Start a new reading journey for this book? This duplicates the entry so you can log new dates and notes.", true);
       
-      const { data, error } = await supabase.from('books').insert([duplicate]).select();
-      
-      if (error) {
-        console.error('Error duplicating:', error);
-        await showStacksModal("Error", "Oops! Something went wrong communicating with the database.", false);
-      } else {
-        globalLibraryData.push(data[0] || duplicate);
+      if (userConfirmed) {
+        const duplicate = {
+          uuid: crypto.randomUUID(),
+          title: getField(book, 'title'),
+          author: getField(book, 'author'),
+          isbn: getField(book, 'isbn'),
+          cover_url: getField(book, 'cover_url'),
+          pages: getField(book, 'pages'),
+          category: normalizeCategory(getField(book, 'category')),
+          status: 1, 
+          date_started: getLocalDateString(),
+          read_date: null,
+          rating: 0,
+          notes: null
+        };
+        
+        globalLibraryData.push(duplicate);
+        localStorage.setItem('the_stacks_local_books', JSON.stringify(globalLibraryData));
+        
         renderHeroSection();
-        calculateStats();
         applyLibraryFilters(); 
         await showStacksModal("Success", "New journey added! Check your Current Reads.", false);
         closeBookDetails();
       }
-    }
-  });
+    });
+  }
 
-  // Delete/Return book action click event
+  // Delete book action click event
   document.getElementById('btn-delete-book').addEventListener('click', async () => {
     const userConfirmed = await showStacksModal("Delete Book", "Are you sure you want to delete this book?", true);
     
     if (userConfirmed) {
-      const { error } = await supabase.from('books').delete().eq('uuid', book.uuid);
-  
-      if (error) {
-        await showStacksModal("Error", "Could not delete the book. Please try again.", false);
-        return;
-      }
-  
       globalLibraryData = globalLibraryData.filter(b => b.uuid !== book.uuid);
-      loadBooks();
+      localStorage.setItem('the_stacks_local_books', JSON.stringify(globalLibraryData));
+      
+      applyLibraryFilters();
+      renderHeroSection();
       closeBookDetails();
+      showToast("Book deleted!");
     }
   });
 
@@ -1179,9 +1553,9 @@ if (startScanBtn) {
         });
       },
       (err) => { /* Ignore constant scan frame read errors */ }
-    ).catch((err) => {
+    ).catch(async (err) => {
       console.error("Camera access denied or error:", err);
-      alert("Could not access the camera. Please ensure permissions are granted.");
+      await showStacksModal("Error", "Could not access the camera. Please ensure permissions are granted.", false);
       scannerContainer.classList.add('hidden');
     });
   });
@@ -1216,8 +1590,8 @@ async function searchGoogleBooks(query) {
       const info = item.volumeInfo;
       const title = info.title || 'Unknown Title';
       const author = info.authors ? info.authors.join(', ') : 'Unknown Author';
-      const category = info.categories ? info.categories[0] : 'Uncategorized';
-      const thumbnail = info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http:', 'https:') : 'https://placehold.co/60x90?text=No+Cover';
+      const category = normalizeCategory(info.categories ? info.categories[0] : 'Uncategorized');
+      const thumbnail = info.imageLinks?.thumbnail ? info.imageLinks.thumbnail.replace('http:', 'https:') : getGenericPlaceholderCoverUrl(title, author);
       const infoLink = info.infoLink || '#';
       
       let isbn = '';
@@ -1251,6 +1625,57 @@ async function searchGoogleBooks(query) {
     document.querySelectorAll('.add-book-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const button = e.target;
+        
+        const title = decodeURIComponent(button.dataset.title);
+        const author = decodeURIComponent(button.dataset.author);
+        const isbn = decodeURIComponent(button.dataset.isbn);
+        const category = normalizeCategory(decodeURIComponent(button.dataset.category));
+        const coverUrl = decodeURIComponent(button.dataset.cover);
+
+        // Normalize ISBN for comparison
+        const cleanIsbn = isbn ? isbn.replace(/[-\s]/g, '') : '';
+        
+        // Check for duplicates in globalLibraryData
+        let duplicateFound = null;
+        if (cleanIsbn && cleanIsbn !== 'null' && cleanIsbn !== 'undefined' && cleanIsbn !== 'N/A') {
+          duplicateFound = globalLibraryData.find(b => {
+            const bIsbn = getField(b, 'isbn');
+            return bIsbn && bIsbn.replace(/[-\s]/g, '') === cleanIsbn;
+          });
+        }
+        if (!duplicateFound) {
+          const normTitle = title.toLowerCase().trim();
+          const normAuthor = author.toLowerCase().trim();
+          duplicateFound = globalLibraryData.find(b => {
+            const bTitle = (getField(b, 'title') || '').toLowerCase().trim();
+            const bAuthor = (getField(b, 'author') || '').toLowerCase().trim();
+            return bTitle === normTitle && bAuthor === normAuthor;
+          });
+        }
+
+        if (duplicateFound) {
+          const cancelBtn = document.getElementById('stacks-modal-cancel');
+          const confirmBtn = document.getElementById('stacks-modal-confirm');
+          if (cancelBtn && confirmBtn) {
+            cancelBtn.textContent = "Open Existing";
+            confirmBtn.textContent = "Add Anyway";
+          }
+          const addAnyway = await showStacksModal(
+            "Already in Stacks",
+            `"${title}" is already in your library.`,
+            true
+          );
+          if (cancelBtn && confirmBtn) {
+            cancelBtn.textContent = "Cancel";
+            confirmBtn.textContent = "Yes";
+          }
+          
+          if (!addAnyway) {
+            setTimeout(() => { openDetails(duplicateFound); }, 300);
+            return;
+          }
+        }
+
         button.textContent = 'Saving...';
         button.style.backgroundColor = 'var(--terracotta)';
         button.disabled = true;
@@ -1260,29 +1685,30 @@ async function searchGoogleBooks(query) {
 
         const payload = {};
         payload[getKey('uuid')] = crypto.randomUUID();
-        payload[getKey('title')] = decodeURIComponent(button.dataset.title);
-        payload[getKey('author')] = decodeURIComponent(button.dataset.author);
+        payload[getKey('title')] = title;
+        payload[getKey('author')] = author;
         payload[getKey('status')] = 0; 
-        payload[getKey('isbn')] = decodeURIComponent(button.dataset.isbn);
-        payload[getKey('category')] = decodeURIComponent(button.dataset.category);
-        payload[getKey('cover_url')] = decodeURIComponent(button.dataset.cover);
+        payload[getKey('isbn')] = isbn;
+        payload[getKey('category')] = category;
+        payload[getKey('cover_url')] = coverUrl;
+        payload[getKey('pages')] = 0;
+        payload[getKey('rating')] = 0;
+        payload[getKey('notes')] = '';
+        payload[getKey('created_at')] = new Date().toISOString();
+        payload[getKey('date_added')] = new Date().toISOString();
+        payload[getKey('date_started')] = null;
+        payload[getKey('read_date')] = null;
 
-        const { data, error } = await supabase.from('books').insert([payload]).select();
+        globalLibraryData.push(payload);
+        localStorage.setItem('the_stacks_local_books', JSON.stringify(globalLibraryData));
 
-        if (error) {
-          console.error('Error adding book:', error);
-          button.textContent = 'Error!';
-        } else {
-          button.textContent = 'Saved!';
-          button.style.backgroundColor = 'var(--sage-green)';
-          
-          if (data && data.length > 0) {
-            const savedBook = data[0];
-            globalLibraryData.push(savedBook);
-            setTimeout(() => { openDetails(savedBook); }, 600);
-            loadBooks(); 
-          }
-        }
+        button.textContent = 'Saved!';
+        button.style.backgroundColor = 'var(--sage-green)';
+        
+        setTimeout(() => { openDetails(payload); }, 600);
+        populateFilterDropdowns();
+        applyLibraryFilters();
+        renderHeroSection();
       });
     });
   } catch (error) {
@@ -1311,7 +1737,11 @@ const focusCloseBtn = document.getElementById('focus-close-btn');
 const sound = new Audio('uplifting-bells.wav');
 
 let focusInterval;
-let timeRemaining = 1200; 
+const savedDuration = localStorage.getItem('focus_timer_duration') || '1200';
+let timeRemaining = parseInt(savedDuration);
+if (focusDurationSelect) {
+  focusDurationSelect.value = savedDuration;
+}
 let isTimerRunning = false;
 let audioCtx; 
 
@@ -1320,6 +1750,9 @@ function updateTimerDisplay() {
   const secs = timeRemaining % 60;
   if (timerDisplay) timerDisplay.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
+
+// Initial display refresh
+updateTimerDisplay();
 
 if (playPauseBtn) {
   playPauseBtn.addEventListener('click', () => {
@@ -1364,7 +1797,9 @@ if (focusDurationSelect) {
     if (pauseIcon) pauseIcon.style.display = 'none';
     if (timerDisplay) timerDisplay.style.color = "var(--text-dark)";
     
-    timeRemaining = parseInt(focusDurationSelect.value);
+    const val = focusDurationSelect.value;
+    localStorage.setItem('focus_timer_duration', val);
+    timeRemaining = parseInt(val);
     updateTimerDisplay();
   });
 }
@@ -1417,6 +1852,51 @@ function showStacksModal(title, message, isConfirm = false) {
 
     const onCancel = () => { cleanup(); resolve(false); };
     const onConfirm = () => { cleanup(); resolve(true); };
+
+    cancelBtn.addEventListener('click', onCancel);
+    confirmBtn.addEventListener('click', onConfirm);
+  });
+}
+
+function showPromptModal(title, message, placeholder = '') {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('stacks-modal-overlay');
+    const titleEl = document.getElementById('stacks-modal-title');
+    const messageEl = document.getElementById('stacks-modal-message');
+    const inputEl = document.getElementById('stacks-modal-input');
+    const cancelBtn = document.getElementById('stacks-modal-cancel');
+    const confirmBtn = document.getElementById('stacks-modal-confirm');
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    
+    if (inputEl) {
+      inputEl.value = '';
+      inputEl.placeholder = placeholder;
+      inputEl.style.display = 'block';
+      setTimeout(() => inputEl.focus(), 100);
+    }
+
+    cancelBtn.style.display = 'block';
+    confirmBtn.textContent = 'Confirm';
+
+    overlay.classList.remove('hidden');
+
+    const cleanup = () => {
+      overlay.classList.add('hidden');
+      if (inputEl) {
+        inputEl.style.display = 'none';
+      }
+      cancelBtn.removeEventListener('click', onCancel);
+      confirmBtn.removeEventListener('click', onConfirm);
+    };
+
+    const onCancel = () => { cleanup(); resolve(null); };
+    const onConfirm = () => {
+      const val = inputEl ? inputEl.value.trim() : '';
+      cleanup();
+      resolve(val);
+    };
 
     cancelBtn.addEventListener('click', onCancel);
     confirmBtn.addEventListener('click', onConfirm);
@@ -1596,7 +2076,7 @@ const renderStatsList = (booksArray, listTitle) => {
   booksArray.forEach(book => {
     const title = getField(book, 'title') || 'Unknown';
     const author = getField(book, 'author') || 'Unknown';
-    const coverUrl = getField(book, 'cover_url') || 'https://placehold.co/150x200?text=No+Cover';
+    const coverUrl = getField(book, 'cover_url') || getPlaceholderCoverUrl(book);
     const ratingNum = Number(getField(book, 'rating')) || 0;
     
     let ratingDisplay = '<span style="color: #b3bfae; font-size: 11px; font-family: \'Courier New\';">No Rating</span>';
@@ -1605,7 +2085,7 @@ const renderStatsList = (booksArray, listTitle) => {
     const card = document.createElement('div');
     card.className = 'book-card';
     card.innerHTML = `
-      <img src="${coverUrl}" alt="${title}" class="book-cover" onerror="this.src='https://placehold.co/150x200?text=No+Cover'">
+      <img src="${coverUrl}" alt="${title}" class="book-cover" onerror="this.src=getPlaceholderCoverUrl(globalLibraryData.find(b => b.uuid === '${book.uuid}'))">
       <div class="book-info">
         <p class="book-title">${title}</p>
         <p class="book-author">${author}</p>
@@ -1750,6 +2230,8 @@ function drawChart(type, labels, data, color, stepSize, onClickCallback) {
 
 function initStatsPage() {
   const yearSelect = document.getElementById('stats-year-select');
+  if (!yearSelect) return;
+
   const finishedBooks = globalLibraryData.filter(b => {
     const status = Number(getField(b, 'status'));
     const readDate = getField(b, 'read_date') || getField(b, 'date_finished');
@@ -1760,89 +2242,59 @@ function initStatsPage() {
     return String(readDate).split('-')[0];
   }))].sort((a, b) => b - a);
   
+  const currentVal = yearSelect.value;
   yearSelect.innerHTML = '<option value="all">All Time</option>';
   years.forEach(y => {
     const opt = document.createElement('option');
     opt.value = y; opt.textContent = y;
     yearSelect.appendChild(opt);
   });
+  if (years.includes(currentVal)) {
+    yearSelect.value = currentVal;
+  }
+
+  if (statsInitialized) return;
+  statsInitialized = true;
 
   yearSelect.addEventListener('change', (e) => renderAnnualStats(e.target.value));
 
-  document.getElementById('btn-view-in-stacks').addEventListener('click', () => {
-    document.querySelectorAll('.page-view').forEach(v => v.classList.remove('active'));
-    document.getElementById('view-library').classList.add('active');
-    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.querySelector('.nav-item[data-target="view-library"]').classList.add('active');
-    lastActiveTab = 'view-library';
+  const viewInStacksBtn = document.getElementById('btn-view-in-stacks');
+  if (viewInStacksBtn) {
+    viewInStacksBtn.addEventListener('click', () => {
+      document.querySelectorAll('.page-view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-library').classList.add('active');
+      document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+      document.querySelector('.nav-item[data-target="view-library"]').classList.add('active');
+      lastActiveTab = 'view-library';
 
-    libraryYearFilter = currentStatsYear; 
+      libraryYearFilter = currentStatsYear; 
 
-    document.querySelectorAll('.quick-btn, .filter-btn').forEach(btn => btn.classList.remove('active'));
-    const finishedBtn = document.querySelector('[data-sort="date_finished_desc"]'); 
-    if (finishedBtn) finishedBtn.classList.add('active');
+      document.querySelectorAll('.quick-btn, .filter-btn').forEach(btn => {
+        const statusVal = btn.getAttribute('data-status');
+        if (statusVal === '2') {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
 
-    applyLibraryFilters(); 
-    document.querySelectorAll('.hero-pill-btn').forEach(b => b.classList.remove('active'));
-  });
-}
+      const filterYearSelect = document.getElementById('filter-year');
+      if (filterYearSelect) {
+        filterYearSelect.value = currentStatsYear === 'all' ? 'all' : currentStatsYear;
+      }
 
-function calculateStats() {
-  const books = globalLibraryData;
-  const timeFilterEl = document.getElementById('stats-timefilter');
-  const filter = timeFilterEl ? timeFilterEl.value : 'year';
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
+      const filterRatingSelect = document.getElementById('filter-rating');
+      if (filterRatingSelect) filterRatingSelect.value = 'all';
+      const filterCategorySelect = document.getElementById('filter-category');
+      if (filterCategorySelect) filterCategorySelect.value = 'all';
+      const filterHasNotesEl = document.getElementById('filter-has-notes');
+      if (filterHasNotesEl) filterHasNotesEl.checked = false;
+      const filterMissingCoverEl = document.getElementById('filter-missing-cover');
+      if (filterMissingCoverEl) filterMissingCoverEl.checked = false;
 
-  const activeCount = books.filter(b => Number(getField(b, 'status')) === 1).length;
-  
-  let periodCount = 0;
-  const completedBooks = books.filter(b => Number(getField(b, 'status')) === 2 && (getField(b, 'read_date') || getField(b, 'date_finished')));
-  
-  completedBooks.forEach(b => {
-    const readDateStr = getField(b, 'read_date') || getField(b, 'date_finished');
-    const timestamp = parseSafeDate(readDateStr);
-    if (timestamp === 0) return;
-    const readDate = new Date(timestamp);
-    if (filter === 'all') periodCount++;
-    else if (filter === 'year' && readDate.getFullYear() === currentYear) periodCount++;
-    else if (filter === 'month' && readDate.getFullYear() === currentYear && readDate.getMonth() === currentMonth) periodCount++;
-  });
-
-  const categoryCounts = {};
-  books.forEach(b => {
-    const cat = getField(b, 'category');
-    if (cat && cat !== 'Uncategorized' && cat !== 'N/A') {
-      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
-    }
-  });
-
-  const sortedCategories = Object.keys(categoryCounts).sort((a, b) => categoryCounts[b] - categoryCounts[a]);
-  const topCategories = sortedCategories.slice(0, 3); 
-
-  const statActiveEl = document.getElementById('stat-active');
-  const statYearlyEl = document.getElementById('stat-yearly');
-  const statCategoriesEl = document.getElementById('stat-categories');
-
-  if (statActiveEl) statActiveEl.textContent = activeCount;
-  
-  if (statYearlyEl) {
-    statYearlyEl.textContent = periodCount;
-    const labelEl = statYearlyEl.nextElementSibling;
-    if (labelEl) {
-        labelEl.textContent = filter === 'month' ? 'Books Read This Month' : 
-                              filter === 'year' ? 'Books Read This Year' : 
-                              'Total Books Read';
-    }
-  }
-
-  if (statCategoriesEl) {
-    if (topCategories.length === 0) {
-      statCategoriesEl.innerHTML = '<li>No categories yet</li>';
-    } else {
-      statCategoriesEl.innerHTML = topCategories.map(cat => `<li>${cat} (${categoryCounts[cat]})</li>`).join('');
-    }
+      applyLibraryFilters(); 
+      document.querySelectorAll('.hero-pill-btn').forEach(b => b.classList.remove('active'));
+    });
   }
 }
 
@@ -1859,17 +2311,96 @@ function parseSafeDate(val) {
   return isNaN(parsed) ? 0 : parsed;
 }
 
-function formatDate(isoString) {
-  if (!isoString) return '';
-  const date = new Date(isoString);
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  const y = String(date.getFullYear()).slice(-2);
-  return `${m}-${d}-${y}`;
+function formatVintageDate(iso, mode = 'stamp') {
+  if (!iso) {
+    if (mode === 'input') return '';
+    return mode === 'meta' ? '--' : 'mm-dd-yy';
+  }
+  let dateStr = String(iso);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    dateStr += 'T00:00:00Z';
+  }
+  const d = new Date(dateStr);
+  if (isNaN(d)) {
+    if (mode === 'input') return '';
+    return mode === 'meta' ? '--' : 'mm-dd-yy';
+  }
+  
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const yearFull = d.getUTCFullYear();
+  const yearTwoDigit = String(yearFull).slice(-2);
+  
+  if (mode === 'input') {
+    return `${yearFull}-${month}-${day}`;
+  } else {
+    // Both stamp and meta display as mm-dd-yy
+    return `${month}-${day}-${yearTwoDigit}`;
+  }
 }
 
-function getCoverUrl(isbn) {
-  if (!isbn || isbn === 'N/A') return 'https://placehold.co/150x200?text=No+Cover';
+function normalizeCategory(cat) {
+  if (!cat) return 'Uncategorized';
+  let clean = String(cat).trim();
+  if (!clean || clean.toLowerCase() === 'null' || clean.toLowerCase() === 'undefined' || clean === '--') {
+    return 'Uncategorized';
+  }
+  return clean
+    .split(/[\s/]+/)
+    .map(word => {
+      if (!word) return '';
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    })
+    .filter(Boolean)
+    .join(' ');
+}
+
+function getLocalDateString() {
+  const d = new Date();
+  const offset = d.getTimezoneOffset();
+  const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+  return localDate.toISOString().split('T')[0];
+}
+
+function trimCategory(cat, limit = 20) {
+  if (!cat) return 'Uncategorized';
+  const str = String(cat).trim();
+  if (str.length <= limit) return str;
+  return str.substring(0, limit) + '...';
+}
+
+// Single delegated scroll listener for view-details header shadows
+const detailsContainer = document.getElementById('view-details');
+const detailsHeader = document.querySelector('.details-header');
+if (detailsContainer && detailsHeader) {
+  detailsContainer.addEventListener('scroll', () => {
+    if (detailsContainer.scrollTop > 50) {
+      detailsHeader.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+      detailsHeader.style.borderBottom = '1px solid var(--detail-line)';
+    } else {
+      detailsHeader.style.boxShadow = 'none';
+      detailsHeader.style.borderBottom = 'none';
+    }
+  }, { passive: true });
+}
+
+function getGenericPlaceholderCoverUrl(title, author) {
+  const cleanTitle = title.length > 25 ? title.substring(0, 22) + '...' : title;
+  const cleanAuthor = author.length > 20 ? author.substring(0, 17) + '...' : author;
+  const text = encodeURIComponent(`${cleanTitle}\nby\n${cleanAuthor}`);
+  return `https://placehold.co/150x225?text=${text}`;
+}
+
+function getPlaceholderCoverUrl(book) {
+  const title = getField(book, 'title') || 'No Title';
+  const author = getField(book, 'author') || 'No Author';
+  return getGenericPlaceholderCoverUrl(title, author);
+}
+
+function getCoverUrl(isbn, book = null) {
+  if (!isbn || isbn === 'N/A') {
+    return book ? getPlaceholderCoverUrl(book) : 'https://placehold.co/150x225?text=No+Cover';
+  }
   const cleanIsbn = String(isbn).replace(/[-\s]/g, '');
   return `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-M.jpg?default=false`;
 }
@@ -1885,50 +2416,80 @@ async function fetchBooksFromAPIs(query) {
     finalQuery = `isbn:${numbersOnly}`;
   }
 
+  // Try Open Library first to avoid Google Books 429 rate limit errors
   try {
-    const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(finalQuery)}&maxResults=10`);
-    if (!response.ok) throw new Error(`Google Books returned status ${response.status}`);
-    data = await response.json();
-    if (!data.items || data.items.length === 0) {
-      throw new Error('Google Books returned empty items');
+    const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(finalQuery)}&limit=10`);
+    if (!response.ok) throw new Error("Open Library API failed");
+    const olData = await response.json();
+    if (olData.docs && olData.docs.length > 0) {
+      data = {
+        items: olData.docs.map(doc => {
+          const author = doc.author_name ? doc.author_name.join(', ') : 'Unknown Author';
+          const isbn = doc.isbn ? doc.isbn[0] : '';
+          let thumbnail = getGenericPlaceholderCoverUrl(doc.title, author);
+          if (doc.cover_i) {
+            thumbnail = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
+          } else if (isbn) {
+            thumbnail = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
+          }
+          return {
+            volumeInfo: {
+              title: doc.title,
+              authors: doc.author_name || [],
+              categories: doc.subject || [],
+              pageCount: doc.number_of_pages_median || doc.number_of_pages || 0,
+              imageLinks: { thumbnail },
+              infoLink: `https://openlibrary.org${doc.key}`,
+              industryIdentifiers: doc.isbn ? [{ type: 'ISBN_13', identifier: doc.isbn[0] }] : []
+            }
+          };
+        })
+      };
+    } else {
+      throw new Error("Open Library docs empty");
     }
   } catch (e) {
-    console.warn("Google Books API failed, trying Open Library:", e);
+    console.warn("Open Library API failed, trying Google Books:", e);
     try {
-      const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(finalQuery)}&limit=10`);
-      if (!response.ok) throw new Error("Open Library API failed");
-      const olData = await response.json();
-      if (olData.docs && olData.docs.length > 0) {
-        data = {
-          items: olData.docs.map(doc => {
-            const author = doc.author_name ? doc.author_name.join(', ') : 'Unknown Author';
-            const isbn = doc.isbn ? doc.isbn[0] : '';
-            let thumbnail = 'https://placehold.co/60x90?text=No+Cover';
-            if (doc.cover_i) {
-              thumbnail = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
-            } else if (isbn) {
-              thumbnail = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
-            }
-            return {
-              volumeInfo: {
-                title: doc.title,
-                authors: doc.author_name || [],
-                categories: doc.subject || [],
-                pageCount: doc.number_of_pages_median || doc.number_of_pages || 0,
-                imageLinks: { thumbnail },
-                infoLink: `https://openlibrary.org${doc.key}`,
-                industryIdentifiers: doc.isbn ? [{ type: 'ISBN_13', identifier: doc.isbn[0] }] : []
-              }
-            };
-          })
-        };
-      } else {
-        data = { items: [] };
+      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(finalQuery)}&maxResults=10`);
+      if (!response.ok) throw new Error(`Google Books returned status ${response.status}`);
+      data = await response.json();
+      if (!data.items || data.items.length === 0) {
+        throw new Error('Google Books returned empty items');
       }
-    } catch (olErr) {
-      console.error("All book APIs failed:", olErr);
+    } catch (googleErr) {
+      console.error("All book APIs failed:", googleErr);
       data = { items: [] };
     }
   }
   return data;
 }
+
+// touch event listeners for pull-to-refresh on Library page
+(function() {
+  let touchStart = 0;
+  const touchLimit = 150; // pull distance
+  const viewLib = document.getElementById('view-library');
+
+  if (viewLib) {
+    viewLib.addEventListener('touchstart', (e) => {
+      if (viewLib.scrollTop === 0) {
+        touchStart = e.touches[0].clientY;
+      } else {
+        touchStart = 0;
+      }
+    }, { passive: true });
+
+    viewLib.addEventListener('touchmove', (e) => {
+      if (touchStart > 0) {
+        const currentY = e.touches[0].clientY;
+        const pullDist = currentY - touchStart;
+        if (pullDist > touchLimit) {
+          touchStart = 0; // prevent multiple triggers
+          showToast("Refreshing library...");
+          loadBooks();
+        }
+      }
+    }, { passive: true });
+  }
+})();

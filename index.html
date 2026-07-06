@@ -8,6 +8,9 @@
   <meta name="apple-mobile-web-app-title" content="Stacks">
   
   <title>The Stacks</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css?v=2">
   <link rel="icon" type="image/png" href="icon_small.png">
   <link rel="apple-touch-icon" href="logo.png">
@@ -43,6 +46,7 @@
     <div id="stacks-modal-card" class="stacks-modal-card">
       <h2 id="stacks-modal-title" class="stacks-section-heading">Notification</h2>
       <p id="stacks-modal-message"></p>
+      <input type="text" id="stacks-modal-input" class="toolbar-input" style="display: none; margin-bottom: 15px; border: 1px solid var(--detail-line); box-sizing: border-box;" placeholder="Enter value...">
       <div style="display: flex; gap: 10px;">
         <button id="stacks-modal-cancel" class="stacks-btn" style="background-color: transparent; color: var(--text-dark); border: 1px solid var(--detail-line);">Cancel</button>
         <button id="stacks-modal-confirm" class="stacks-btn">Confirm</button>
@@ -126,6 +130,17 @@
           </div>
         </div>
 
+        <div class="toolbar-input-wrapper" style="margin-top: 15px; margin-bottom: 5px; position: relative; width: 100%;">
+          <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="local-search" class="toolbar-input with-icon" style="padding-left: 35px; padding-right: 40px; width: 100%;" placeholder="Search title, author, isbn, notes...">
+          
+          <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px;">
+            <button id="clear-search-btn" style="background: none; border: none; color: var(--sage-green); padding: 0; cursor: pointer; display: none; align-items: center; justify-content: center;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          </div>
+        </div>
+        
       </div>
       
       <div class="book-grid" id="book-grid"></div>
@@ -229,7 +244,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="clock-icon"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               
               <select id="focus-duration" class="hidden-native-select">
-                <option value="5">5 Sec (Test)</option>
+                <option value="5">5s (demo)</option>
                 <option value="900">15 Minutes</option>
                 <option value="1200" selected>20 Minutes</option>
                 <option value="1800">30 Minutes</option>
@@ -260,20 +275,59 @@
         <button class="quick-btn" data-status="3" data-sort="date_added_desc">Gave Up</button>
       </div>
 
-      <div class="red-line"></div>
-      
-      <div class="toolbar-input-wrapper" style="margin-bottom: 15px; position: relative;">
-        <svg class="toolbar-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" id="local-search" class="toolbar-input with-icon" style="border: 1px solid var(--detail-line); padding-right: 65px;" placeholder="Search title or author...">
-        
-        <div style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 8px;">
-          <button id="clear-search-btn" style="background: none; border: none; color: var(--sage-green); padding: 0; cursor: pointer; display: none; align-items: center; justify-content: center;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          </button>
-          <button id="submit-search-btn" style="background: none; border: none; color: var(--terracotta); padding: 0; cursor: pointer; display: flex; align-items: center; justify-content: center;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-          </button>
+      <div class="red-line" style="margin: 15px 0 10px 0;"></div>
+
+      <div class="advanced-filters" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px;">
+        <div style="display: flex; gap: 10px; width: 100%;">
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-family: 'Courier New', monospace; font-size: 0.8rem; color: var(--sage-green); font-weight: bold;">Finished Year</label>
+            <select id="filter-year" class="toolbar-input" style="width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid var(--detail-line); background: var(--card-bg); border-radius: 6px; height: 36px;">
+              <option value="all">All Years</option>
+            </select>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-family: 'Courier New', monospace; font-size: 0.8rem; color: var(--sage-green); font-weight: bold;">Rating</label>
+            <select id="filter-rating" class="toolbar-input" style="width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid var(--detail-line); background: var(--card-bg); border-radius: 6px; height: 36px;">
+              <option value="all">All Ratings</option>
+              <option value="5">5 Stars</option>
+              <option value="4">4+ Stars</option>
+              <option value="3">3+ Stars</option>
+              <option value="unrated">Unrated</option>
+            </select>
+          </div>
         </div>
+
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-family: 'Courier New', monospace; font-size: 0.8rem; color: var(--sage-green); font-weight: bold;">Category</label>
+          <select id="filter-category" class="toolbar-input" style="width: 100%; padding: 8px; font-size: 0.85rem; border: 1px solid var(--detail-line); background: var(--card-bg); border-radius: 6px; height: 36px;">
+            <option value="all">All Categories</option>
+          </select>
+        </div>
+
+        <div style="display: flex; gap: 15px; margin-top: 5px; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; font-size: 0.85rem; color: var(--text-dark); cursor: pointer; user-select: none;">
+            <input type="checkbox" id="filter-has-notes" style="accent-color: var(--sage-green); width: 16px; height: 16px;"> Has Notes
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-family: 'Courier New', monospace; font-size: 0.85rem; color: var(--text-dark); cursor: pointer; user-select: none;">
+            <input type="checkbox" id="filter-missing-cover" style="accent-color: var(--sage-green); width: 16px; height: 16px;"> Missing Cover
+          </label>
+        </div>
+      </div>
+
+      <!-- Apply / Clear Filters buttons -->
+      <div style="margin-top: 15px; display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;">
+        <button id="btn-apply-filters" class="btn btn-primary" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; background-color: var(--terracotta); color: white; border: none; padding: 12px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; font-size: 0.95rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="9" width="16" height="4" rx="1" transform="rotate(-12 12 11)" />
+            <rect x="4" y="14" width="16" height="4" rx="1" />
+            <rect x="4" y="4" width="16" height="4" rx="1" transform="rotate(8 12 6)" />
+          </svg>
+          Wander
+        </button>
+        <button id="btn-clear-filters" class="btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px; background-color: transparent; color: var(--terracotta); border: 1px solid var(--terracotta); padding: 12px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; font-size: 0.95rem; font-weight: bold; cursor: pointer; transition: transform 0.1s;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          Clear All
+        </button>
       </div>
 
     </div>
