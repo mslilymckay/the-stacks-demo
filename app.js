@@ -304,8 +304,6 @@ async function loadBooks() {
     .from(TABLE_NAME)
     .select('*')
     .order('title', { ascending: true });
-
-  if (error) { console.error(error); return; }
   
   globalLibraryData = books.map(b => {
     b.category = normalizeCategory(b.category);
