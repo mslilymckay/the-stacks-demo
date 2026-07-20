@@ -69,7 +69,6 @@ const searchResultsContainer = document.getElementById('search-results-container
 window.addEventListener('load', async () => {
   const loadingVideo = document.getElementById('loading-video');
   const loadingScreen = document.getElementById('loading-screen');
-  const authScreen = document.getElementById('auth-screen');
   const skipBtn = document.getElementById('skip-loading-btn');
   
   // Register Service Worker
@@ -80,18 +79,6 @@ window.addEventListener('load', async () => {
   }
 
   if (loadingVideo) loadingVideo.playbackRate = 1.5; 
-
-  // 1. Silent login checking
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (session) {
-    loadBooks(); 
-  } else {
-    // Clear sandbox local books cache on logout/no session
-    localStorage.removeItem('the_stacks_local_books');
-    document.dispatchEvent(new CustomEvent('library-loaded'));
-    if (authScreen) authScreen.classList.remove('hidden');
-  }
 
   // 2. Cinematic Loading Screen State Machine
   let libraryLoaded = false;
@@ -137,31 +124,6 @@ window.addEventListener('load', async () => {
       skipBtn.style.display = 'flex';
     }
   }, 6000);
-});
-
-// Authenticate user via Supabase and route to library dashboard
-document.getElementById('auth-login-btn').addEventListener('click', async () => {
-  const email = document.getElementById('auth-email').value;
-  const password = document.getElementById('auth-password').value;
-  const errorText = document.getElementById('auth-error');
-  const loginBtn = document.getElementById('auth-login-btn');
-  
-  errorText.style.display = 'none';
-  loginBtn.textContent = 'Verifying...';
-
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email,
-    password: password
-  });
-
-  if (error) {
-    errorText.textContent = "Oops! " + error.message;
-    errorText.style.display = 'block';
-    loginBtn.textContent = "Let's go!";
-  } else {
-    document.getElementById('auth-screen').classList.add('hidden');
-    loadBooks(); 
-  }
 });
 
 // =========================================================================
