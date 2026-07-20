@@ -895,21 +895,14 @@ const journalContent = document.getElementById('journal-content');
 async function updateMultipleBookFields(updatesObj) {
   if (!currentOpenBookId || Object.keys(updatesObj).length === 0) return;
 
-  const { data, error } = await supabase
-    .from('books')
-    .update(updatesObj)
-    .eq('uuid', currentOpenBookId);
-
-  if (error) {
-    console.error('Error updating book:', error);
-  } else {
-    const bookToUpdate = globalLibraryData.find(b => b.uuid === currentOpenBookId);
-    if (bookToUpdate) {
-      for (const [key, value] of Object.entries(updatesObj)) {
-        const matchedKey = Object.keys(bookToUpdate).find(k => k.toLowerCase() === key.toLowerCase()) || key;
-        bookToUpdate[matchedKey] = value;
-      }
+  const bookToUpdate = globalLibraryData.find(b => b.uuid === currentOpenBookId);
+  if (bookToUpdate) {
+    for (const [key, value] of Object.entries(updatesObj)) {
+      const matchedKey = Object.keys(bookToUpdate).find(k => k.toLowerCase() === key.toLowerCase()) || key;
+      bookToUpdate[matchedKey] = value;
     }
+    // Force the save to local storage
+    localStorage.setItem('the_stacks_local_books', JSON.stringify(globalLibraryData));
   }
 }
 
