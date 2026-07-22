@@ -26,7 +26,6 @@
     <video autoplay muted playsinline id="loading-video">
       <source src="loading.mp4#t=3.5,7" type="video/mp4">
     </video>
-    <button id="skip-loading-btn" class="skip-btn">➔</button>
   </div>
 
   <div id="stacks-modal-overlay" class="stacks-modal-overlay hidden">
@@ -43,7 +42,7 @@
   
   <header class="app-header">
     <div id="header-scroll-trigger" style="display: flex; align-items: center; gap: 10px; cursor: pointer; flex-grow: 1;">
-      <img src="icon_small.png" alt="The Stacks Logo" class="header-logo">
+      <img src="icon_small.png" alt="The Stacks Logo" class="header-logo" id="header-logo">
       <h1 class="header-title">The Stacks</h1>
     </div>
     <div style="display: flex; gap: 15px; align-items: center;">
@@ -231,7 +230,7 @@
               <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="clock-icon"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
               
               <select id="focus-duration" class="hidden-native-select">
-                <option value="5">5s (demo)</option>
+                <option value="300">5 Minutes</option>
                 <option value="900">15 Minutes</option>
                 <option value="1200" selected>20 Minutes</option>
                 <option value="1800">30 Minutes</option>
