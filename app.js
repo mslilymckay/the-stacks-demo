@@ -2343,6 +2343,7 @@ function getPlaceholderCoverUrl(book) {
   const author = getField(book, 'author') || 'No Author';
   return getGenericPlaceholderCoverUrl(title, author);
 }
+window.getPlaceholderCoverUrl = getPlaceholderCoverUrl;
 
 function getCoverUrl(isbn, book = null) {
   if (!isbn || isbn === 'N/A') {
