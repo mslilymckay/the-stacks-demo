@@ -1,41 +1,42 @@
-const CACHE_NAME = 'the-stacks-cache-v1';
-const ASSETS = [
+const CACHE_NAME = 'the-stacks-cache-v2';
+const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './style.css',
+  './style.css?v=2',
   './app.js',
   './manifest.json',
   './icon_small.png',
   './logo.png',
   './focus.gif',
   './loading.mp4',
+  './uplifting-bells.wav',
   './light-bells.wav',
   './quick-ring.wav',
-  './uplifting-bells.wav'
+  'https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&display=swap',
+  'https://unpkg.com/html5-qrcode',
+  'https://cdn.jsdelivr.net/npm/chart.js'
 ];
 
-// Install stage: cache all static shell files
+// Service Worker Install lifecycle
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('[Service Worker] Pre-caching app shell assets');
-      return cache.addAll(ASSETS).catch(err => {
-        console.error('[Service Worker] Error during pre-caching:', err);
-      });
+      console.log('[PWA] Pre-caching offline assets...');
+      return cache.addAll(ASSETS_TO_CACHE);
     })
   );
   self.skipWaiting();
 });
 
-// Activate stage: clean up old caches
+// Service Worker Activation lifecycle
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
+    caches.keys().then((cacheNames) => {
       return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            console.log('[Service Worker] Removing old cache:', key);
-            return caches.delete(key);
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            console.log('[PWA] Cleaning up old cache:', cacheName);
+            return caches.delete(cacheName);
           }
         })
       );
@@ -44,7 +45,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch stage: serve from cache if available, else fetch and cache cover images
+// Service Worker Fetch interception (Stale-While-Revalidate pattern for cached assets)
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
 
@@ -53,33 +54,40 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-
-      return fetch(event.request).then((networkResponse) => {
-        // Cache dynamic books covers from Open Library or Google Books APIs
-        if (
-          networkResponse.status === 200 &&
-          (requestUrl.host.includes('covers.openlibrary.org') ||
-           requestUrl.host.includes('books.google.com') ||
-           requestUrl.host.includes('googleusercontent.com'))
-        ) {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, networkResponse.clone());
+  // Handle Cover Art Images from Open Library / Google Books
+  if (requestUrl.host.includes('covers.openlibrary.org') || requestUrl.host.includes('books.google.com') || requestUrl.host.includes('googleusercontent.com')) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const fetchPromise = fetch(event.request).then((networkResponse) => {
+            if (networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
             return networkResponse;
-          });
-        }
+          }).catch(() => cachedResponse); // Offline fallback
 
-        return networkResponse;
-      }).catch((err) => {
-        console.warn('[Service Worker] Fetch failed, resource not available offline:', err);
-        // Fallback for document request (if offline)
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
+          return cachedResponse || fetchPromise;
+        });
+      })
+    );
+    return;
+  }
+
+  // General Stale-While-Revalidate logic for local app shell assets
+  event.respondWith(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        const fetchPromise = fetch(event.request).then((networkResponse) => {
+          if (networkResponse.status === 200) {
+            cache.put(event.request, networkResponse.clone());
+          }
+          return networkResponse;
+        }).catch(() => {
+          // Offline fallback
+          return cachedResponse;
+        });
+
+        return cachedResponse || fetchPromise;
       });
     })
   );
