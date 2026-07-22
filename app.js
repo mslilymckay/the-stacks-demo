@@ -69,7 +69,6 @@ const searchResultsContainer = document.getElementById('search-results-container
 window.addEventListener('load', async () => {
   const loadingVideo = document.getElementById('loading-video');
   const loadingScreen = document.getElementById('loading-screen');
-  const skipBtn = document.getElementById('skip-loading-btn');
   
   // Register Service Worker
   if ('serviceWorker' in navigator) {
@@ -80,50 +79,45 @@ window.addEventListener('load', async () => {
 
   if (loadingVideo) loadingVideo.playbackRate = 1.5; 
 
+  // Load books directly
+  loadBooks(); 
+
   // 2. Cinematic Loading Screen State Machine
-  let libraryLoaded = false;
-  let videoEnded = false;
   let hasFadedOut = false;
 
-  const fadeOutLoading = () => {
-    if (hasFadedOut) return;
-    hasFadedOut = true;
-    if (loadingVideo) loadingVideo.style.opacity = '0';
-    if (loadingScreen) {
-      loadingScreen.style.opacity = '0';
-      loadingScreen.style.transition = 'opacity 0.8s ease-in-out, visibility 0.8s ease-in-out';
-      setTimeout(() => {
-        loadingScreen.classList.add('hidden');
-      }, 800);
+  const fadeOutLoadingScreen = () => {
+    if (!hasFadedOut) {
+      hasFadedOut = true;
+      if (loadingVideo) loadingVideo.style.opacity = '0';
+      if (loadingScreen) {
+        loadingScreen.style.opacity = '0';
+        loadingScreen.style.transition = 'opacity 0.8s ease-in-out, visibility 0.8s ease-in-out';
+        setTimeout(() => {
+          loadingScreen.classList.add('hidden');
+        }, 800);
+      }
     }
   };
 
-  if (skipBtn) {
-    skipBtn.addEventListener('click', fadeOutLoading);
-  }
-
   if (loadingVideo) {
-    loadingVideo.addEventListener('ended', fadeOutLoading);
+    // 1. Standard event for when a video finishes naturally
+    loadingVideo.addEventListener('ended', fadeOutLoadingScreen);
+    
+    // 2. Failsafe for media fragments (t=3.5,7) which often pause at the end mark
+    loadingVideo.addEventListener('pause', fadeOutLoadingScreen);
+
+    // Explicitly play the video 
+    loadingVideo.play().catch(err => {
+      console.warn("Video play blocked by browser:", err);
+      fadeOutLoadingScreen(); // Failsafe 3: If the browser blocks autoplay
+    });
+    
+    // Failsafe 4: An absolute timer. 
+    // A 3.5-second clip at 1.5x speed takes ~2.33 seconds.
+    setTimeout(fadeOutLoadingScreen, 2500); 
+  } else {
+    fadeOutLoadingScreen(); // Failsafe 5: If the video element doesn't exist
   }
-
-  document.addEventListener('library-loaded', () => {
-    libraryLoaded = true;
-    if (skipBtn && !hasFadedOut) {
-      skipBtn.style.display = 'flex'; // Skip button matches circular close style in CSS
-    }
-    if (videoEnded) {
-      fadeOutLoading();
-    }
-  });
-
-  // Fallback timeout in case loading takes too long
-  setTimeout(() => {
-    if (libraryLoaded) {
-      fadeOutLoading();
-    } else if (skipBtn) {
-      skipBtn.style.display = 'flex';
-    }
-  }, 6000);
 });
 
 // =========================================================================
@@ -1577,7 +1571,7 @@ async function searchGoogleBooks(query) {
     // Setup Add Book listeners inside search results
     document.querySelectorAll('.add-book-btn').forEach(btn => {
       btn.addEventListener('click', async (e) => {
-        const button = e.target;
+        const button = btn; // Use direct reference instead of e.target to prevent nested click bugs
         
         const title = decodeURIComponent(button.dataset.title);
         const author = decodeURIComponent(button.dataset.author);
@@ -2369,49 +2363,52 @@ async function fetchBooksFromAPIs(query) {
     finalQuery = `isbn:${numbersOnly}`;
   }
 
-  // Try Open Library first to avoid Google Books 429 rate limit errors
+  const apiKey = 'AIzaSyD8cH6KE9JXatD9t0tyc6QETNMrtJP-Pt4';
+
+  // Try Google Books API first (prioritized using hardcoded API key)
   try {
-    const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(finalQuery)}&limit=10`);
-    if (!response.ok) throw new Error("Open Library API failed");
-    const olData = await response.json();
-    if (olData.docs && olData.docs.length > 0) {
-      data = {
-        items: olData.docs.map(doc => {
-          const author = doc.author_name ? doc.author_name.join(', ') : 'Unknown Author';
-          const isbn = doc.isbn ? doc.isbn[0] : '';
-          let thumbnail = getGenericPlaceholderCoverUrl(doc.title, author);
-          if (doc.cover_i) {
-            thumbnail = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
-          } else if (isbn) {
-            thumbnail = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
-          }
-          return {
-            volumeInfo: {
-              title: doc.title,
-              authors: doc.author_name || [],
-              categories: doc.subject || [],
-              pageCount: doc.number_of_pages_median || doc.number_of_pages || 0,
-              imageLinks: { thumbnail },
-              infoLink: `https://openlibrary.org${doc.key}`,
-              industryIdentifiers: doc.isbn ? [{ type: 'ISBN_13', identifier: doc.isbn[0] }] : []
-            }
-          };
-        })
-      };
-    } else {
-      throw new Error("Open Library docs empty");
+    const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(finalQuery)}&maxResults=10&key=${apiKey}`);
+    if (!response.ok) throw new Error(`Google Books API returned status ${response.status}`);
+    data = await response.json();
+    if (!data.items || data.items.length === 0) {
+      throw new Error('Google Books API returned empty items');
     }
-  } catch (e) {
-    console.warn("Open Library API failed, trying Google Books:", e);
+  } catch (googleErr) {
+    console.warn("Google Books API failed, falling back to Open Library:", googleErr);
+    // Fall back to Open Library (with explicit fields parameter)
     try {
-      const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(finalQuery)}&maxResults=10`);
-      if (!response.ok) throw new Error(`Google Books returned status ${response.status}`);
-      data = await response.json();
-      if (!data.items || data.items.length === 0) {
-        throw new Error('Google Books returned empty items');
+      const response = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(finalQuery)}&limit=10&fields=key,title,author_name,cover_i,isbn,subject,number_of_pages_median,number_of_pages`);
+      if (!response.ok) throw new Error("Open Library API failed");
+      const olData = await response.json();
+      if (olData.docs && olData.docs.length > 0) {
+        data = {
+          items: olData.docs.map(doc => {
+            const author = doc.author_name ? doc.author_name.join(', ') : 'Unknown Author';
+            const isbn = doc.isbn ? doc.isbn[0] : '';
+            let thumbnail = getGenericPlaceholderCoverUrl(doc.title, author);
+            if (doc.cover_i) {
+              thumbnail = `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg`;
+            } else if (isbn) {
+              thumbnail = `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`;
+            }
+            return {
+              volumeInfo: {
+                title: doc.title,
+                authors: doc.author_name || [],
+                categories: doc.subject || [],
+                pageCount: doc.number_of_pages_median || doc.number_of_pages || 0,
+                imageLinks: { thumbnail },
+                infoLink: `https://openlibrary.org${doc.key}`,
+                industryIdentifiers: doc.isbn ? [{ type: 'ISBN_13', identifier: doc.isbn[0] }] : []
+              }
+            };
+          })
+        };
+      } else {
+        throw new Error("Open Library docs empty");
       }
-    } catch (googleErr) {
-      console.error("All book APIs failed:", googleErr);
+    } catch (olErr) {
+      console.error("All book APIs failed:", olErr);
       data = { items: [] };
     }
   }
